@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+.env
+.env.local
+.env*.local
+.vercel
+*.log
+.DS_Store
+tsconfig.tsbuildinfo
+scrape-*.txt
+카드뉴스/
+drafts/
+.agent/
