@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
 
       const set = setRows[0];
       const slides = (await sql`
-        SELECT id, set_id, card_no, role, title, body, hashtags
+        SELECT id, set_id, card_no, role, title, body, hashtags, html
         FROM card_news_slides
         WHERE set_id = ${set.id}
         ORDER BY card_no ASC
