@@ -41,27 +41,29 @@ export default async function HomePage() {
   const notices = rowsRaw as unknown as NoticeRow[];
 
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <header className="mb-10 flex items-end justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">나쿠 콘텐츠연구소</h1>
+    <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6 sm:py-10">
+      <header className="mb-6 sm:mb-10">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h1 className="text-xl font-bold tracking-tight sm:text-2xl">나쿠 콘텐츠연구소</h1>
+            <p className="mt-1 text-xs text-neutral-500 sm:text-sm">
+              네이버 스마트플레이스 공지 모니터링 · 릴스 대본 보관함
+            </p>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
             <a
               href={NAVER_NOTICE_URL}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-600 shadow-sm transition hover:border-neutral-400 hover:text-neutral-900"
+              className="hidden items-center gap-1 rounded-md border border-neutral-200 bg-white px-2 py-1 text-[11px] font-medium text-neutral-600 shadow-sm transition hover:border-neutral-400 hover:text-neutral-900 sm:inline-flex"
             >
               🔗 네이버 공식 공지 <span aria-hidden>↗</span>
             </a>
+            <form action="/api/auth/logout" method="post">
+              <button className="text-xs text-neutral-400 hover:text-neutral-600">로그아웃</button>
+            </form>
           </div>
-          <p className="mt-1 text-sm text-neutral-500">
-            네이버 스마트플레이스 공지 모니터링 · 릴스 대본 보관함
-          </p>
         </div>
-        <form action="/api/auth/logout" method="post">
-          <button className="text-xs text-neutral-400 hover:text-neutral-600">로그아웃</button>
-        </form>
       </header>
 
       <section>
@@ -76,47 +78,57 @@ export default async function HomePage() {
               <li key={n.id}>
                 <Link
                   href={`/notices/${n.id}`}
-                  className="flex items-center justify-between gap-4 px-4 py-4 transition hover:bg-neutral-50"
+                  className="block px-3 py-3 transition hover:bg-neutral-50 sm:px-4 sm:py-4"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <TagBadges importance={n.importance} tags={n.tags} />
-                      <p className="truncate text-sm font-medium">{n.title}</p>
-                      {n.has_script ? (
-                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                          🎬 대본
+                  {/* 모바일: 세로 스택 / PC: 가로 */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      {/* 태그 뱃지 */}
+                      <div className="mb-1 flex flex-wrap items-center gap-1">
+                        <TagBadges importance={n.importance} tags={n.tags} />
+                      </div>
+                      {/* 제목 */}
+                      <p className="text-sm font-medium leading-snug sm:truncate">{n.title}</p>
+                      {/* 메타 + 상태 뱃지 */}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-neutral-500">
+                          {fmtDate(n.published_at)}
                         </span>
-                      ) : (
-                        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
-                          🎬 없음
+                        <span className="text-xs text-neutral-300">·</span>
+                        <span className={`text-xs ${n.source === "auto" ? "text-blue-600" : "text-neutral-500"}`}>
+                          {n.source === "auto" ? "자동수집" : "수동"}
                         </span>
-                      )}
-                      {n.has_card_news ? (
-                        <span
-                          className={
-                            "shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium " +
-                            (n.card_qa_verdict === "needs-fix"
-                              ? "bg-amber-50 text-amber-700"
-                              : "bg-sky-50 text-sky-700")
-                          }
-                        >
-                          🖼️ 카드뉴스
-                          {n.card_qa_verdict === "needs-fix" ? " ⚠️" : ""}
-                        </span>
-                      ) : (
-                        <span className="shrink-0 rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
-                          🖼️ 없음
-                        </span>
-                      )}
+                        <span className="text-xs text-neutral-300 hidden sm:inline">·</span>
+                        {n.has_script ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                            🎬 대본
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+                            🎬 없음
+                          </span>
+                        )}
+                        {n.has_card_news ? (
+                          <span
+                            className={
+                              "rounded-full px-2 py-0.5 text-[10px] font-medium " +
+                              (n.card_qa_verdict === "needs-fix"
+                                ? "bg-amber-50 text-amber-700"
+                                : "bg-sky-50 text-sky-700")
+                            }
+                          >
+                            🖼️ 카드뉴스
+                            {n.card_qa_verdict === "needs-fix" ? " ⚠️" : ""}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[10px] font-medium text-neutral-500">
+                            🖼️ 없음
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <p className="mt-1 truncate text-xs text-neutral-500">
-                      {fmtDate(n.published_at)} ·{" "}
-                      <span className={n.source === "auto" ? "text-blue-600" : "text-neutral-500"}>
-                        {n.source === "auto" ? "자동수집" : "수동"}
-                      </span>
-                    </p>
+                    <span className="mt-1 shrink-0 text-neutral-400">→</span>
                   </div>
-                  <span className="shrink-0 text-neutral-400">→</span>
                 </Link>
               </li>
             ))}

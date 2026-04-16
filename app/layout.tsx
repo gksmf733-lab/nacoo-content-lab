@@ -4,6 +4,7 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "나쿠 콘텐츠연구소",
   description: "네이버 스마트플레이스 공지 모니터링 · 릴스 대본 보관함",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
 };
 
 export default function RootLayout({

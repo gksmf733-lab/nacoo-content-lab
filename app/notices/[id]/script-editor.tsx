@@ -48,7 +48,7 @@ export function ScriptEditor({ id, initial }: { id: number; initial: Initial }) 
   }
 
   return (
-    <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
+    <div className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6">
       <Field label="제목">
         <input
           type="text"

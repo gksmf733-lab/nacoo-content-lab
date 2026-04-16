@@ -104,24 +104,24 @@ function SetHeader({ set }: { set: SetRow }) {
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-neutral-200 bg-white px-4 py-3 shadow-sm">
-        <span className="text-xs text-neutral-500">타깃</span>
-        <span className="text-sm font-medium">{set.audience ?? "-"}</span>
+      <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-neutral-200 bg-white px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
+        <span className="text-[11px] text-neutral-500">타깃</span>
+        <span className="text-xs font-medium sm:text-sm">{set.audience ?? "-"}</span>
         <span className="text-neutral-300">|</span>
-        <span className="text-xs text-neutral-500">톤</span>
-        <span className="text-sm font-medium">{set.tone ?? "-"}</span>
+        <span className="text-[11px] text-neutral-500">톤</span>
+        <span className="text-xs font-medium sm:text-sm">{set.tone ?? "-"}</span>
         <span className="text-neutral-300">|</span>
-        <span className="text-xs text-neutral-500">카드</span>
-        <span className="text-sm font-medium">{set.card_count}장</span>
+        <span className="text-[11px] text-neutral-500">카드</span>
+        <span className="text-xs font-medium sm:text-sm">{set.card_count}장</span>
         <span className="ml-auto">{verdictBadge}</span>
       </div>
-      <div className="flex items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-        <div className="text-xs text-neutral-600">
-          💾 <span className="font-medium">로컬 저장</span> — 버튼을 누르면 저장 명령어가 클립보드에 복사됩니다. 터미널에 붙여넣고 실행하세요.
+      <div className="flex flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <div className="text-[11px] text-neutral-600 sm:text-xs">
+          💾 <span className="font-medium">로컬 저장</span> — 명령어를 복사 후 터미널에서 실행
         </div>
         <button
           onClick={saveLocal}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700"
+          className="w-full rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 sm:w-auto"
         >
           {copied ? "✓ 복사됨" : "로컬에 저장 명령 복사"}
         </button>
@@ -168,26 +168,26 @@ function SlideCard({ slide }: { slide: SlideRow }) {
 
   return (
     <li className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      <div className="grid grid-cols-[300px_1fr] gap-0">
-        {/* 미리보기 — 1080×1350 카드를 0.259배로 스케일해서 280×350으로 표시 */}
-        <div className="flex items-center justify-center border-r border-neutral-200 bg-neutral-50 p-4">
+      <div className="flex flex-col sm:grid sm:grid-cols-[280px_1fr]">
+        {/* 미리보기 — 모바일: 폭 맞춤 / PC: 280×350 고정 */}
+        <div className="flex items-center justify-center border-b border-neutral-200 bg-neutral-50 p-3 sm:border-b-0 sm:border-r sm:p-4">
           {slide.html ? (
             <div
               className="overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm"
-              style={{ width: 280, height: 350 }}
+              style={{ width: 200, height: 250 }}
             >
               <iframe
-                // html 변경 시 iframe을 강제 remount해서 새 내용으로 확실히 로드
                 key={slide.html.length + ":" + slide.html.slice(0, 32)}
                 title={`card-${slide.card_no}`}
                 srcDoc={slide.html}
                 sandbox=""
                 scrolling="no"
+                className="sm:!w-[1080px] sm:!h-[1350px] sm:!scale-[0.2593]"
                 style={{
                   width: 1080,
                   height: 1350,
                   border: 0,
-                  transform: "scale(0.2593)",
+                  transform: "scale(0.1852)",
                   transformOrigin: "0 0",
                   pointerEvents: "none",
                 }}
@@ -196,7 +196,7 @@ function SlideCard({ slide }: { slide: SlideRow }) {
           ) : (
             <div
               className="flex items-center justify-center rounded-md border border-dashed border-neutral-300 text-[11px] text-neutral-400"
-              style={{ width: 280, height: 350 }}
+              style={{ width: 200, height: 250 }}
             >
               HTML 없음
             </div>
@@ -204,7 +204,7 @@ function SlideCard({ slide }: { slide: SlideRow }) {
         </div>
 
         {/* 본문 */}
-        <div className="space-y-2 p-4">
+        <div className="space-y-2 p-3 sm:p-4">
           <div className="flex items-center gap-2">
             <span className="rounded-md bg-neutral-900 px-2 py-0.5 text-[11px] font-medium text-white">
               Card {slide.card_no}
@@ -242,7 +242,7 @@ function SlideCard({ slide }: { slide: SlideRow }) {
               <div className="mt-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2 space-y-2">
                 <div className="text-[10px] font-semibold text-neutral-500">레이아웃</div>
 
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <label className="flex items-center gap-1 text-[11px]">
                     <span className="text-neutral-500 w-14">정렬</span>
                     <select

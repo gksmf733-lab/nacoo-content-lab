@@ -74,16 +74,16 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
   }
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
+    <main className="mx-auto max-w-4xl px-4 py-6 sm:px-6 sm:py-10">
       <Link href="/" className="text-xs text-neutral-500 hover:text-neutral-900">
         ← 대시보드
       </Link>
 
       <header className="mt-3 mb-6">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1">
           <TagBadges importance={notice.importance} tags={notice.tags} />
         </div>
-        <h1 className="mt-2 text-xl font-bold leading-snug">{notice.title}</h1>
+        <h1 className="mt-2 text-lg font-bold leading-snug sm:text-xl">{notice.title}</h1>
         <p className="mt-1 text-xs text-neutral-500">
           {fmtDate(notice.published_at)} ·{" "}
           <span className={notice.source === "auto" ? "text-blue-600" : "text-neutral-500"}>
@@ -92,23 +92,25 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
         </p>
       </header>
 
-      {/* 탭 */}
-      <nav className="mb-6 flex gap-1 border-b border-neutral-200">
-        <TabLink
-          href={`/notices/${notice.id}?tab=info`}
-          active={tab === "info"}
-          label="📋 공지 내용"
-        />
-        <TabLink
-          href={`/notices/${notice.id}?tab=script`}
-          active={tab === "script"}
-          label={script ? "🎬 릴스 대본" : "🎬 릴스 대본 (없음)"}
-        />
-        <TabLink
-          href={`/notices/${notice.id}?tab=cardnews`}
-          active={tab === "cardnews"}
-          label={cardSet ? `🖼️ 카드뉴스 (${cardSet.card_count}장)` : "🖼️ 카드뉴스 (없음)"}
-        />
+      {/* 탭 — 모바일에서 스크롤 가능 */}
+      <nav className="mb-6 -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0">
+        <div className="flex min-w-max gap-1 border-b border-neutral-200">
+          <TabLink
+            href={`/notices/${notice.id}?tab=info`}
+            active={tab === "info"}
+            label="📋 공지"
+          />
+          <TabLink
+            href={`/notices/${notice.id}?tab=script`}
+            active={tab === "script"}
+            label={script ? "🎬 대본" : "🎬 대본 (없음)"}
+          />
+          <TabLink
+            href={`/notices/${notice.id}?tab=cardnews`}
+            active={tab === "cardnews"}
+            label={cardSet ? `🖼️ 카드 (${cardSet.card_count}장)` : "🖼️ 카드 (없음)"}
+          />
+        </div>
       </nav>
 
       {tab === "info" && <NoticeInfoPanel notice={notice} />}
@@ -123,7 +125,7 @@ function TabLink({ href, active, label }: { href: string; active: boolean; label
     <Link
       href={href}
       className={
-        "rounded-t-lg border-b-2 px-4 py-2 text-sm font-medium transition " +
+        "whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2 text-xs font-medium transition sm:px-4 sm:text-sm " +
         (active
           ? "border-neutral-900 text-neutral-900"
           : "border-transparent text-neutral-500 hover:text-neutral-900")
@@ -136,8 +138,8 @@ function TabLink({ href, active, label }: { href: string; active: boolean; label
 
 function NoticeInfoPanel({ notice }: { notice: NoticeRow }) {
   return (
-    <div className="space-y-6 rounded-2xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <div className="grid grid-cols-2 gap-4 text-sm">
+    <div className="space-y-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:space-y-6 sm:p-6">
+      <div className="grid grid-cols-2 gap-3 text-sm sm:gap-4">
         <Info label="발표일" value={fmtDate(notice.published_at)} />
         <Info label="시행일" value={fmtDate(notice.effective_at)} />
       </div>
