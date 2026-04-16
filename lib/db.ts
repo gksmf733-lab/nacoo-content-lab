@@ -1,10 +1,23 @@
-import { neon } from "@neondatabase/serverless";
+import { neon, type NeonQueryFunction } from "@neondatabase/serverless";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL is not set");
+function getSQL(): NeonQueryFunction<false, false> {
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    // 빌드 타임에는 DATABASE_URL이 없을 수 있으므로 lazy 초기화
+    throw new Error("DATABASE_URL is not set");
+  }
+  return neon(url);
 }
 
-export const sql = neon(process.env.DATABASE_URL);
+// Proxy로 감싸서 실제 호출 시점에만 neon 초기화 (빌드 타임 에러 방지)
+export const sql: NeonQueryFunction<false, false> = new Proxy(
+  (() => {}) as unknown as NeonQueryFunction<false, false>,
+  {
+    apply(_target, _thisArg, args) {
+      return getSQL()(...(args as [TemplateStringsArray, ...unknown[]]));
+    },
+  }
+);
 
 export type Notice = {
   id: number;
