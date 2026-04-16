@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 export type CardLayout = {
@@ -115,13 +115,13 @@ function SetHeader({ set }: { set: SetRow }) {
         <span className="text-xs font-medium sm:text-sm">{set.card_count}장</span>
         <span className="ml-auto">{verdictBadge}</span>
       </div>
-      <div className="flex flex-col gap-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-        <div className="text-[11px] text-neutral-600 sm:text-xs">
+      <div className="hidden sm:flex flex-row items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+        <div className="text-xs text-neutral-600">
           💾 <span className="font-medium">로컬 저장</span> — 명령어를 복사 후 터미널에서 실행
         </div>
         <button
           onClick={saveLocal}
-          className="w-full rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 sm:w-auto"
+          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700"
         >
           {copied ? "✓ 복사됨" : "로컬에 저장 명령 복사"}
         </button>
@@ -169,34 +169,13 @@ function SlideCard({ slide }: { slide: SlideRow }) {
   return (
     <li className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
       <div className="flex flex-col sm:grid sm:grid-cols-[280px_1fr]">
-        {/* 미리보기 — 모바일: 폭 맞춤 / PC: 280×350 고정 */}
+        {/* 미리보기 — 모바일: 가로 꽉 참 / PC: 240×300 고정 */}
         <div className="flex items-center justify-center border-b border-neutral-200 bg-neutral-50 p-3 sm:border-b-0 sm:border-r sm:p-4">
           {slide.html ? (
-            <div
-              className="overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm"
-              style={{ width: 200, height: 250 }}
-            >
-              <iframe
-                key={slide.html.length + ":" + slide.html.slice(0, 32)}
-                title={`card-${slide.card_no}`}
-                srcDoc={slide.html}
-                sandbox=""
-                scrolling="no"
-                className="sm:!w-[1080px] sm:!h-[1350px] sm:!scale-[0.2593]"
-                style={{
-                  width: 1080,
-                  height: 1350,
-                  border: 0,
-                  transform: "scale(0.1852)",
-                  transformOrigin: "0 0",
-                  pointerEvents: "none",
-                }}
-              />
-            </div>
+            <CardPreview html={slide.html} cardNo={slide.card_no} />
           ) : (
             <div
-              className="flex items-center justify-center rounded-md border border-dashed border-neutral-300 text-[11px] text-neutral-400"
-              style={{ width: 200, height: 250 }}
+              className="flex aspect-[4/5] w-full max-w-[260px] items-center justify-center rounded-md border border-dashed border-neutral-300 text-[11px] text-neutral-400 sm:w-[220px]"
             >
               HTML 없음
             </div>
@@ -427,6 +406,113 @@ function QaPanel({
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+/**
+ * 반응형 카드 미리보기.
+ * 모바일: 가용 너비에 맞춰 자동 스케일, PC: 220×275 고정.
+ * iframe은 항상 1080×1350으로 렌더 후 CSS scale로 축소.
+ */
+function CardPreview({ html, cardNo }: { html: string; cardNo: number }) {
+  // PC 기준 크기
+  const pcW = 220;
+  const pcH = 275;
+  const pcScale = pcW / 1080; // ≈ 0.2037
+
+  return (
+    <>
+      {/* 모바일: aspect-ratio로 비율 유지, 가로 꽉 참 */}
+      <div
+        className="relative w-full max-w-[300px] overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-sm sm:hidden"
+        style={{ aspectRatio: "4 / 5" }}
+      >
+        <iframe
+          key={html.length + ":" + html.slice(0, 32)}
+          title={`card-${cardNo}`}
+          srcDoc={html}
+          sandbox=""
+          scrolling="no"
+          className="absolute left-0 top-0 origin-top-left"
+          style={{
+            width: 1080,
+            height: 1350,
+            border: 0,
+            transform: "scale(calc(min(300px, 100%) / 1080))",
+            /* JS로 정확히 맞추기 어려우므로 CSS 변수 + 퍼센트 기반 대체 */
+            pointerEvents: "none",
+          }}
+        />
+        {/* JS 기반 정확한 스케일링 */}
+        <MobileIframeScaler html={html} cardNo={cardNo} />
+      </div>
+
+      {/* PC: 고정 크기 */}
+      <div
+        className="relative hidden overflow-hidden rounded-md border border-neutral-200 bg-white shadow-sm sm:block"
+        style={{ width: pcW, height: pcH }}
+      >
+        <iframe
+          key={html.length + ":" + html.slice(0, 32)}
+          title={`card-${cardNo}`}
+          srcDoc={html}
+          sandbox=""
+          scrolling="no"
+          style={{
+            position: "absolute",
+            top: 0,
+            left: 0,
+            width: 1080,
+            height: 1350,
+            border: 0,
+            transform: `scale(${pcScale})`,
+            transformOrigin: "0 0",
+            pointerEvents: "none",
+          }}
+        />
+      </div>
+    </>
+  );
+}
+
+/** 모바일에서 컨테이너 실제 너비에 맞춰 iframe 스케일 조정 */
+function MobileIframeScaler({ html, cardNo }: { html: string; cardNo: number }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.278); // 300/1080 기본값
+
+  useEffect(() => {
+    function update() {
+      if (ref.current?.parentElement) {
+        const w = ref.current.parentElement.clientWidth;
+        setScale(w / 1080);
+      }
+    }
+    update();
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
+
+  return (
+    <div ref={ref} className="absolute inset-0">
+      <iframe
+        key={html.length + ":" + html.slice(0, 32)}
+        title={`card-m-${cardNo}`}
+        srcDoc={html}
+        sandbox=""
+        scrolling="no"
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: 1080,
+          height: 1350,
+          border: 0,
+          transform: `scale(${scale})`,
+          transformOrigin: "0 0",
+          pointerEvents: "none",
+        }}
+      />
     </div>
   );
 }

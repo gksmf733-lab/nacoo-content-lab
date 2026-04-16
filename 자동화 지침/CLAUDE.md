@@ -69,10 +69,12 @@
      "summary": "핵심 변경사항 상세 요약 (아래 작성 기준 참고)",
      "checklist": "운영자 체크리스트 (아래 작성 기준 참고)",
      "source_urls": ["https://smartplace.naver.com/notices/..."],
+     "deadline": "YYYY-MM-DD 또는 null",
      "source": "auto"
    }
    ```
 
+   - **`deadline` 필드**: 공지 본문에 신청 마감일, 모집 마감일, 접수 마감일 등이 명시된 경우 해당 날짜를 `YYYY-MM-DD` 형식으로 기입한다. 마감일이 없으면 `null`. summary/checklist에서 "마감", "신청 마감", "모집 마감", "접수 마감" 등의 키워드와 함께 나오는 날짜를 추출한다.
    - **`tags` 배열 규칙**: 네이버 공식 공지페이지(https://smartplace.naver.com/notices)의 각 공지 제목 앞에 붙은 뱃지를 **그대로** 배열로 기록한다. 대표 값: `공통`, `플레이스`, `식당`, `예약`, `교육`, `외식업종`.
    - **`중요` 뱃지 처리**: `중요` 뱃지가 붙어있으면 `tags`에 넣지 말고 `importance: "중요"`로 분리해서 보낸다. (서버가 tags에 포함돼 있어도 자동 분리하지만, 에이전트는 규칙대로 분리해서 보낼 것)
    - 중요 뱃지가 없으면 `importance`는 `null`로 보낸다.

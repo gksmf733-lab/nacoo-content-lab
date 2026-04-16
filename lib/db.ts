@@ -31,6 +31,7 @@ export type Notice = {
   source_urls: string[] | null;
   title_hash: string;
   source: "auto" | "manual";
+  deadline: string | null;
   created_at: string;
 };
 

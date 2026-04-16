@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS notices (
   tags           TEXT[] DEFAULT '{}',
   source_urls    TEXT[],
   source         TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual')),
+  deadline       DATE,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -64,5 +65,8 @@ CREATE TABLE IF NOT EXISTS card_news_slides (
 
 -- 마이그레이션: 기존 테이블에 layout 컬럼 추가
 ALTER TABLE card_news_slides ADD COLUMN IF NOT EXISTS layout JSONB DEFAULT '{}'::jsonb;
+
+-- 마이그레이션: 공지에 마감일(deadline) 컬럼 추가
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS deadline DATE;
 
 CREATE INDEX IF NOT EXISTS idx_card_news_slides_set_id ON card_news_slides (set_id);

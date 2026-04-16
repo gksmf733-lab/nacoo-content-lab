@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const rows = await sql`
     SELECT id, title, title_hash, category, importance, tags, published_at, effective_at,
-           summary, source, created_at
+           deadline, summary, source, created_at
     FROM notices
     ORDER BY COALESCE(published_at, created_at::date) DESC
     LIMIT 200
@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
     tags,
     published_at,
     effective_at,
+    deadline,
     summary,
     checklist,
     source_urls,
@@ -58,10 +59,10 @@ export async function POST(req: NextRequest) {
     const rows = await sql`
       INSERT INTO notices (
         title, title_hash, category, importance, tags,
-        published_at, effective_at, summary, checklist, source_urls, source
+        published_at, effective_at, deadline, summary, checklist, source_urls, source
       ) VALUES (
         ${title}, ${title_hash}, ${category ?? null}, ${finalImportance}, ${cleanTags},
-        ${published_at ?? null}, ${effective_at ?? null},
+        ${published_at ?? null}, ${effective_at ?? null}, ${deadline ?? null},
         ${summary ?? null}, ${checklist ?? null},
         ${source_urls ?? null}, ${source}
       )
