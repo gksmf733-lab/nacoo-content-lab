@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { sql } from "@/lib/db";
 import { TagBadges } from "@/lib/tag-badge";
 import { ScriptEditor } from "./script-editor";
+import { ScriptGenerateForm } from "./script-generate-form";
 import { CardNewsPanel, type SetRow, type SlideRow } from "./card-news-panel";
 
 export const dynamic = "force-dynamic";
@@ -32,6 +33,9 @@ type ScriptRow = {
   tone: "urgent" | "opportunity";
   body_markdown: string;
   hashtags: string[] | null;
+  persona_id: string | null;
+  guide: string | null;
+  created_at: string | Date;
   updated_at: string | Date;
 };
 
@@ -51,17 +55,16 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
   const noticeId = Number(id);
   const [noticeRowsRaw, scriptRowsRaw, setRowsRaw] = await Promise.all([
     sql`SELECT * FROM notices WHERE id = ${noticeId} LIMIT 1`,
-    sql`SELECT * FROM reels_scripts WHERE notice_id = ${noticeId} LIMIT 1`,
+    sql`SELECT * FROM reels_scripts WHERE notice_id = ${noticeId} ORDER BY created_at DESC`,
     sql`SELECT id, notice_id, audience, tone, card_count, status, qa_verdict, qa_issues
         FROM card_news_sets WHERE notice_id = ${noticeId} LIMIT 1`,
   ]);
   const noticeRows = noticeRowsRaw as unknown as NoticeRow[];
-  const scriptRows = scriptRowsRaw as unknown as ScriptRow[];
+  const scripts = scriptRowsRaw as unknown as ScriptRow[];
   const setRows = setRowsRaw as unknown as SetRow[];
 
   if (noticeRows.length === 0) notFound();
   const notice = noticeRows[0];
-  const script = scriptRows[0] ?? null;
   const cardSet = setRows[0] ?? null;
 
   let slides: SlideRow[] = [];
@@ -103,7 +106,7 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
           <TabLink
             href={`/notices/${notice.id}?tab=script`}
             active={tab === "script"}
-            label={script ? "🎬 대본" : "🎬 대본 (없음)"}
+            label={scripts.length ? `🎬 대본 (${scripts.length})` : "🎬 대본 (없음)"}
           />
           <TabLink
             href={`/notices/${notice.id}?tab=cardnews`}
@@ -114,7 +117,7 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
       </nav>
 
       {tab === "info" && <NoticeInfoPanel notice={notice} />}
-      {tab === "script" && <ScriptPanel script={script} />}
+      {tab === "script" && <ScriptPanel noticeId={noticeId} scripts={scripts} />}
       {tab === "cardnews" && <CardNewsPanel set={cardSet} slides={slides} />}
     </main>
   );
@@ -194,26 +197,79 @@ function Info({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ScriptPanel({ script }: { script: ScriptRow | null }) {
-  if (!script) {
-    return (
-      <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-12 text-center text-sm text-neutral-500">
-        아직 이 공지의 릴스 대본이 생성되지 않았습니다.
-        <br />
-        자동화 에이전트가 다음 스케줄(09:00 / 18:00 KST)에 생성합니다.
-      </div>
-    );
-  }
+const PERSONA_LABELS: Record<string, string> = {
+  default: "기본",
+  expert: "전문가",
+  warm: "따뜻한 동료",
+};
 
+function fmtDateTime(d: string | Date): string {
+  const dt = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(dt.getTime())) return String(d);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+
+function ScriptPanel({
+  noticeId,
+  scripts,
+}: {
+  noticeId: number;
+  scripts: ScriptRow[];
+}) {
   return (
-    <ScriptEditor
-      id={script.id}
-      initial={{
-        title: script.title,
-        tone: script.tone,
-        body_markdown: script.body_markdown,
-        hashtags: (script.hashtags ?? []).join(" "),
-      }}
-    />
+    <div className="space-y-4">
+      <ScriptGenerateForm noticeId={noticeId} hasExisting={scripts.length > 0} />
+
+      {scripts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-8 text-center text-sm text-neutral-500">
+          아직 이 공지의 릴스 대본이 없습니다.
+          <br />
+          위에서 페르소나를 골라 첫 초안을 만들어 보세요.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="text-xs text-neutral-500">
+            총 {scripts.length}개 버전 (최신순)
+          </div>
+          {scripts.map((s, idx) => (
+            <div key={s.id} className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2 text-[11px] text-neutral-600">
+                <span className="rounded-md bg-neutral-900 px-2 py-0.5 font-medium text-white">
+                  v{scripts.length - idx}
+                </span>
+                {s.persona_id && (
+                  <span className="rounded-md bg-blue-50 px-2 py-0.5 font-medium text-blue-700 ring-1 ring-blue-200">
+                    {PERSONA_LABELS[s.persona_id] ?? s.persona_id}
+                  </span>
+                )}
+                <span className="rounded-md bg-neutral-100 px-2 py-0.5">
+                  {s.tone === "urgent" ? "긴박" : "기회"}
+                </span>
+                <span className="text-neutral-400">· {fmtDateTime(s.created_at)}</span>
+                {s.guide && (
+                  <span
+                    className="truncate text-neutral-400"
+                    title={s.guide}
+                  >
+                    · 가이드: {s.guide.slice(0, 30)}
+                    {s.guide.length > 30 ? "…" : ""}
+                  </span>
+                )}
+              </div>
+              <ScriptEditor
+                id={s.id}
+                initial={{
+                  title: s.title,
+                  tone: s.tone,
+                  body_markdown: s.body_markdown,
+                  hashtags: (s.hashtags ?? []).join(" "),
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }

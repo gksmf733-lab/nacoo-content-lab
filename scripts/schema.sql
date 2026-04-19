@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS notices (
 
 CREATE INDEX IF NOT EXISTS idx_notices_published_at ON notices (published_at DESC);
 
+-- 한 공지당 여러 버전의 대본을 허용 (UNIQUE 제거)
 CREATE TABLE IF NOT EXISTS reels_scripts (
   id             SERIAL PRIMARY KEY,
   notice_id      INTEGER NOT NULL REFERENCES notices(id) ON DELETE CASCADE,
@@ -26,12 +27,14 @@ CREATE TABLE IF NOT EXISTS reels_scripts (
   tone           TEXT NOT NULL CHECK (tone IN ('urgent', 'opportunity')),
   body_markdown  TEXT NOT NULL,
   hashtags       TEXT[],
+  persona_id     TEXT,
+  guide          TEXT,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (notice_id)
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_scripts_created_at ON reels_scripts (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scripts_notice_id ON reels_scripts (notice_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS card_news_sets (
   id             SERIAL PRIMARY KEY,

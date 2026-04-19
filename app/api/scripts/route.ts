@@ -49,9 +49,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ script: rows[0] }, { status: 201 });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    if (message.includes("duplicate") || message.includes("unique")) {
-      return NextResponse.json({ error: "duplicate" }, { status: 409 });
-    }
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
