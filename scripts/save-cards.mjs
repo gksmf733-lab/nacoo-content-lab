@@ -22,7 +22,7 @@ const ROOT = path.resolve("카드뉴스");
 const VIEWPORT = { width: 1080, height: 1350, deviceScaleFactor: 2 };
 const JPEG_QUALITY = 92;
 
-/** 파일시스템에 안전한 폴더명 */
+/** 파일시스템에 안전한 이름 (Windows 금지 문자 교체) */
 function safeFolder(name) {
   return name
     .replace(/[\\/:*?"<>|]/g, "_")
@@ -72,18 +72,18 @@ async function renderSet(browser, setRow) {
     return;
   }
 
-  const folderName = safeFolder(`${setRow.title} 카드뉴스`);
-  const folderPath = path.join(ROOT, folderName);
+  const safeTitle = safeFolder(setRow.title);
+  const folderPath = path.join(ROOT, safeTitle);
   fs.mkdirSync(folderPath, { recursive: true });
 
-  // 1) HTML 파일 쓰기 (임시)
+  // 1) HTML 파일 쓰기 (임시) — 파일명 = 제목
   const htmlPaths = [];
   for (const s of slides) {
     if (!s.html) {
-      console.log(`  ! card-${s.card_no}: html 비어있음, 건너뜀`);
+      console.log(`  ! ${s.card_no}: html 비어있음, 건너뜀`);
       continue;
     }
-    const p = path.join(folderPath, `card-${s.card_no}.html`);
+    const p = path.join(folderPath, `${safeTitle}-${s.card_no}.html`);
     fs.writeFileSync(p, s.html, "utf8");
     htmlPaths.push(p);
   }
@@ -116,7 +116,7 @@ async function renderSet(browser, setRow) {
         notice_id: setRow.notice_id,
         title: setRow.title,
         saved_at: new Date().toISOString(),
-        cards: slides.map((s) => ({ n: s.card_no, file: `card-${s.card_no}.jpg` })),
+        cards: slides.map((s) => ({ n: s.card_no, file: `${safeTitle}-${s.card_no}.jpg` })),
       },
       null,
       2

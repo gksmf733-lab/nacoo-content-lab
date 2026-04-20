@@ -8,8 +8,9 @@ CREATE TABLE IF NOT EXISTS notices (
   importance     TEXT,
   published_at   DATE,
   effective_at   DATE,
-  summary        TEXT,
-  checklist      TEXT,
+  summary        TEXT,          -- 핵심 체크리스트 (번호형 짧은 요약)
+  detail_summary TEXT,          -- 핵심요약 (상세 장문 요약, 대본/카드 입력 소스)
+  checklist      TEXT,          -- 운영자 체크리스트
   tags           TEXT[] DEFAULT '{}',
   source_urls    TEXT[],
   source         TEXT NOT NULL DEFAULT 'auto' CHECK (source IN ('auto', 'manual')),
@@ -71,5 +72,8 @@ ALTER TABLE card_news_slides ADD COLUMN IF NOT EXISTS layout JSONB DEFAULT '{}':
 
 -- 마이그레이션: 공지에 마감일(deadline) 컬럼 추가
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS deadline DATE;
+
+-- 마이그레이션: 공지에 상세 요약(detail_summary) 컬럼 추가
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS detail_summary TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_card_news_slides_set_id ON card_news_slides (set_id);

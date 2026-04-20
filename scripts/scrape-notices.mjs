@@ -1,29 +1,23 @@
 // 네이버 스마트플레이스 공지사항 스크래퍼
 // puppeteer로 https://smartplace.naver.com/notices 페이지를 직접 열어 공지 목록을 파싱한다.
 //
-// 사용:
+// 사용 (CLI):
 //   node scripts/scrape-notices.mjs              → 전체 공지 JSON stdout
 //   node scripts/scrape-notices.mjs --recent 30  → 최근 30일 공지만
+//   node scripts/scrape-notices.mjs --today
+//
+// 사용 (모듈):
+//   import { scrapeNotices } from "./scrape-notices.mjs";
+//   const notices = await scrapeNotices({ recentDays: 7 });
 
 import puppeteer from "puppeteer";
+import { fileURLToPath } from "node:url";
 
 const URL = "https://smartplace.naver.com/notices";
 const MAX_SCROLL = 20; // 최대 스크롤 횟수 (무한스크롤 대비)
 const SCROLL_DELAY = 800; // ms
 
-// 명령줄 파싱
-const args = process.argv.slice(2);
-let recentDays = null;
-let todayOnly = false;
-const recentIdx = args.indexOf("--recent");
-if (recentIdx !== -1 && args[recentIdx + 1]) {
-  recentDays = Number(args[recentIdx + 1]);
-}
-if (args.includes("--today")) {
-  todayOnly = true;
-}
-
-async function scrape() {
+export async function scrapeNotices({ recentDays = null, todayOnly = false } = {}) {
   const browser = await puppeteer.launch({
     headless: "new",
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -254,14 +248,32 @@ async function scrape() {
       await detailPage.close();
     }
 
-    console.log(JSON.stringify(filtered, null, 2));
     console.error(`✓ ${filtered.length}건 수집 (전체 ${unique.length}건)`);
+    return filtered;
   } finally {
     await browser.close();
   }
 }
 
-scrape().catch((e) => {
-  console.error("스크래핑 실패:", e.message);
-  process.exit(1);
-});
+// CLI 진입점: 이 파일이 직접 실행된 경우에만 동작
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  let recentDays = null;
+  let todayOnly = false;
+  const recentIdx = args.indexOf("--recent");
+  if (recentIdx !== -1 && args[recentIdx + 1]) {
+    recentDays = Number(args[recentIdx + 1]);
+  }
+  if (args.includes("--today")) {
+    todayOnly = true;
+  }
+
+  scrapeNotices({ recentDays, todayOnly })
+    .then((notices) => {
+      console.log(JSON.stringify(notices, null, 2));
+    })
+    .catch((e) => {
+      console.error("스크래핑 실패:", e.message);
+      process.exit(1);
+    });
+}

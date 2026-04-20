@@ -46,23 +46,25 @@ export type SetRow = {
 export function CardNewsPanel({
   set,
   slides,
+  noticeTitle,
 }: {
   set: SetRow | null;
   slides: SlideRow[];
+  noticeTitle: string;
 }) {
   if (!set) {
     return (
-      <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-12 text-center text-sm text-neutral-500">
-        아직 이 공지의 카드뉴스가 생성되지 않았습니다.
-        <br />
-        자동화 에이전트가 다음 스케줄(09:00 / 14:00 / 18:00 KST)에 생성합니다.
+      <div className="space-y-4">
+        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-10 text-center text-sm text-neutral-500">
+          아직 이 공지의 카드뉴스가 생성되지 않았습니다.
+        </div>
       </div>
     );
   }
 
   return (
     <div className="space-y-4">
-      <SetHeader set={set} />
+      <SetHeader set={set} noticeTitle={noticeTitle} />
       <ol className="space-y-4">
         {slides.map((s) => (
           <SlideCard key={s.id} slide={s} />
@@ -74,8 +76,14 @@ export function CardNewsPanel({
   );
 }
 
-function SetHeader({ set }: { set: SetRow }) {
-  const [copied, setCopied] = useState(false);
+function SetHeader({ set, noticeTitle }: { set: SetRow; noticeTitle: string }) {
+  const [saving, setSaving] = useState(false);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
+  const [saveResult, setSaveResult] = useState<
+    | { ok: true; count: number; filename: string }
+    | { ok: false; error: string }
+    | null
+  >(null);
   const verdictBadge =
     set.qa_verdict === "pass" ? (
       <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200">
@@ -91,14 +99,124 @@ function SetHeader({ set }: { set: SetRow }) {
       </span>
     );
 
-  async function saveLocal() {
-    const cmd = `npm run save:cards -- ${set.id}`;
+  /** 파일시스템 안전 문자만 남김 */
+  function safeName(s: string): string {
+    return s.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
+  }
+
+  /** 카드뉴스 ZIP 다운로드 (클라이언트 사이드, Vercel/로컬 어디서든 동작) */
+  async function downloadZip() {
+    if (saving) return;
+    setSaving(true);
+    setSaveResult(null);
+    setProgress(null);
+
     try {
-      await navigator.clipboard.writeText(cmd);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2500);
-    } catch {
-      window.prompt("아래 명령어를 터미널에서 실행하세요 (직접 복사):", cmd);
+      // 1. 슬라이드 조회
+      const listRes = await fetch(`/api/card-news?notice_id=${set.notice_id}`);
+      if (!listRes.ok) throw new Error(`목록 조회 실패 (${listRes.status})`);
+      const listData = await listRes.json();
+      const slides: Array<{ card_no: number; html: string | null }> =
+        (listData.slides ?? []).filter((s: { html: string | null }) => s.html);
+      if (slides.length === 0) throw new Error("저장할 슬라이드가 없습니다.");
+
+      const safeTitle = safeName(noticeTitle);
+
+      // 2. lazy import (번들 크기 최소화)
+      const [{ default: JSZip }, { default: html2canvas }] = await Promise.all([
+        import("jszip"),
+        import("html2canvas"),
+      ]);
+
+      const zip = new JSZip();
+      setProgress({ current: 0, total: slides.length });
+
+      // 3. 각 슬라이드를 iframe에 렌더 → 캡처 → ZIP에 추가
+      for (let i = 0; i < slides.length; i++) {
+        const slide = slides[i];
+        const html = slide.html!;
+
+        const iframe = document.createElement("iframe");
+        iframe.style.cssText =
+          "position:fixed;top:0;left:-10000px;width:1080px;height:1350px;border:0;";
+        iframe.srcdoc = html;
+        document.body.appendChild(iframe);
+
+        try {
+          // iframe 로드 대기
+          await new Promise<void>((resolve, reject) => {
+            iframe.addEventListener("load", () => resolve(), { once: true });
+            iframe.addEventListener("error", () => reject(new Error("iframe load error")), {
+              once: true,
+            });
+          });
+
+          // iframe 내부 문서의 폰트 로드 대기
+          const ifDoc = iframe.contentDocument;
+          if (!ifDoc) throw new Error("iframe contentDocument 없음");
+          if (ifDoc.fonts?.ready) {
+            await ifDoc.fonts.ready;
+          }
+          // 그라디언트/이미지 렌더 안정화
+          await new Promise((r) => setTimeout(r, 400));
+
+          const target = ifDoc.body;
+          const canvas = await html2canvas(target, {
+            width: 1080,
+            height: 1350,
+            windowWidth: 1080,
+            windowHeight: 1350,
+            scale: 2,
+            useCORS: true,
+            backgroundColor: null,
+            logging: false,
+          });
+
+          const blob: Blob | null = await new Promise((r) =>
+            canvas.toBlob((b) => r(b), "image/jpeg", 0.92),
+          );
+          if (!blob) throw new Error(`card-${slide.card_no} blob 생성 실패`);
+          zip.file(`${safeTitle}-${slide.card_no}.jpg`, blob);
+          setProgress({ current: i + 1, total: slides.length });
+        } finally {
+          iframe.remove();
+        }
+      }
+
+      // 4. spec.json (파일 목록 + 메타)
+      zip.file(
+        "spec.json",
+        JSON.stringify(
+          {
+            set_id: set.id,
+            notice_id: set.notice_id,
+            title: noticeTitle,
+            saved_at: new Date().toISOString(),
+            cards: slides.map((s) => ({ n: s.card_no, file: `${safeTitle}-${s.card_no}.jpg` })),
+          },
+          null,
+          2,
+        ),
+      );
+
+      // 5. ZIP 생성 + 다운로드 트리거
+      const zipBlob = await zip.generateAsync({ type: "blob" });
+      const filename = `${safeTitle}.zip`;
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setSaveResult({ ok: true, count: slides.length, filename });
+    } catch (e: unknown) {
+      setSaveResult({ ok: false, error: e instanceof Error ? e.message : "알 수 없는 오류" });
+    } finally {
+      setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -115,15 +233,31 @@ function SetHeader({ set }: { set: SetRow }) {
         <span className="text-xs font-medium sm:text-sm">{set.card_count}장</span>
         <span className="ml-auto">{verdictBadge}</span>
       </div>
-      <div className="hidden sm:flex flex-row items-center justify-between rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-        <div className="text-xs text-neutral-600">
-          💾 <span className="font-medium">로컬 저장</span> — 명령어를 복사 후 터미널에서 실행
+      <div className="flex flex-row items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+        <div className="min-w-0 text-xs text-neutral-600">
+          📦 <span className="font-medium">카드뉴스 ZIP 다운로드</span> —{" "}
+          <span className="text-neutral-500">
+            {saveResult?.ok ? (
+              `✅ ${saveResult.count}장 · ${saveResult.filename}`
+            ) : saveResult && !saveResult.ok ? (
+              <span className="text-red-600">⚠ {saveResult.error}</span>
+            ) : progress ? (
+              `렌더링 중 ${progress.current}/${progress.total}...`
+            ) : (
+              "제목.zip 파일로 다운로드 (브라우저 기본 다운로드 폴더)"
+            )}
+          </span>
         </div>
         <button
-          onClick={saveLocal}
-          className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700"
+          onClick={downloadZip}
+          disabled={saving}
+          className="shrink-0 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60"
         >
-          {copied ? "✓ 복사됨" : "로컬에 저장 명령 복사"}
+          {saving
+            ? progress
+              ? `${progress.current}/${progress.total}...`
+              : "준비 중..."
+            : "ZIP 다운로드"}
         </button>
       </div>
     </div>

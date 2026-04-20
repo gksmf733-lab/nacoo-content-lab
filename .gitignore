@@ -12,3 +12,15 @@ scrape-*.txt
 카드뉴스/
 drafts/
 .agent/
+
+# 로컬 크론/스크레이핑 산출물
+data/
+
+# 누끼 작업용 임시 (npm deps + ML 모델 수백 MB)
+scripts/bg-remove-tmp/
+
+# Canva 스타터 템플릿 (자체 git 리포)
+canva-starter/
+
+# 인스타툰 원본/출력 이미지
+인스타툰 이미지/

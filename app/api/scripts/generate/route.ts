@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { callClaude, parseJsonFromResponse } from "@/lib/claude-cli.mjs";
 import { sql } from "@/lib/db";
 import { isAuthed, checkApiToken } from "@/lib/auth";
 import { getPersona, type Persona } from "@/lib/personas";
@@ -15,6 +15,7 @@ function buildPrompt(
   notice: {
     title: string;
     summary: string | null;
+    detail_summary: string | null;
     checklist: string | null;
     category: string | null;
     importance: string | null;
@@ -27,6 +28,8 @@ function buildPrompt(
     ? `\n\n## 추가 가이드 (최우선 반영)\n${guide.trim()}`
     : "";
 
+  const primaryContext = notice.detail_summary ?? notice.summary ?? "없음";
+
   return `${persona.promptBlock}
 아래 네이버 스마트플레이스 공지 내용을 바탕으로 인스타그램 릴스 대본(30~60초 분량)을 작성하세요.
 
@@ -34,8 +37,10 @@ function buildPrompt(
 - 제목: ${notice.title}
 - 카테고리: ${notice.category ?? "일반"}
 - 중요도: ${notice.importance ?? "보통"}
-- 요약: ${notice.summary ?? "없음"}
-- 체크리스트: ${notice.checklist ?? "없음"}
+- 핵심요약(상세):
+${primaryContext}
+- 핵심 체크리스트: ${notice.summary ?? "없음"}
+- 운영자 체크리스트: ${notice.checklist ?? "없음"}
 - 참고 링크: ${(notice.source_urls ?? []).join(", ") || "없음"}${guideSection}
 
 ## 대본 규칙
@@ -73,14 +78,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다." },
-      { status: 500 }
-    );
-  }
-
   const body = await req.json();
   const noticeId = Number(body.notice_id);
   if (!Number.isFinite(noticeId)) {
@@ -92,7 +89,7 @@ export async function POST(req: NextRequest) {
   const persona = getPersona(personaId);
 
   const noticeRows = (await sql`
-    SELECT id, title, category, importance, summary, checklist, source_urls
+    SELECT id, title, category, importance, summary, detail_summary, checklist, source_urls
     FROM notices WHERE id = ${noticeId} LIMIT 1
   `) as unknown as Array<{
     id: number;
@@ -100,6 +97,7 @@ export async function POST(req: NextRequest) {
     category: string | null;
     importance: string | null;
     summary: string | null;
+    detail_summary: string | null;
     checklist: string | null;
     source_urls: string[] | null;
   }>;
@@ -111,27 +109,9 @@ export async function POST(req: NextRequest) {
 
   let parsed: ClaudeScript;
   try {
-    const client = new Anthropic({ apiKey });
     const prompt = buildPrompt(notice, persona, guide);
-    const result = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 2048,
-      temperature: 0.7,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = result.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error("Claude 응답에서 JSON을 추출할 수 없습니다.");
-      parsed = JSON.parse(match[0]);
-    }
+    const text = await callClaude(prompt);
+    parsed = parseJsonFromResponse(text);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `Claude 생성 실패: ${message}` }, { status: 500 });

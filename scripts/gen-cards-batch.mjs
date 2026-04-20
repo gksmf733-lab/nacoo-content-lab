@@ -17,6 +17,10 @@ const COLOR_INK = "#1A1A1A";
 const COLOR_ACCENT = "#E8572C";
 const BRAND = "나쿠 콘텐츠연구소";
 
+// 캐릭터 이미지를 PNG에서 data URI로 변환 (SSOT card-html.ts와 동일한 결과)
+const charPng = readFileSync(path.join(projectRoot, 'public', 'images', 'character-sm.png'));
+const CHARACTER_IMG = `data:image/png;base64,${charPng.toString('base64')}`;
+
 const TITLE_SIZE_PX = { sm: 54, md: 66, lg: 82, xl: 96 };
 const HOOK_TITLE_SIZE_PX = { sm: 78, md: 94, lg: 112, xl: 128 };
 const BODY_SIZE_PX = { sm: 32, md: 38, lg: 44 };
@@ -82,6 +86,8 @@ const BASE_STYLE = `
   .cta-list{margin-top:64px;list-style:none;display:flex;flex-direction:column;gap:28px}
   .cta-list li{font-size:36px;font-weight:600;line-height:1.45;padding-left:64px;position:relative}
   .cta-list li .num{position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;background:#FFFFFF;color:${COLOR_ACCENT};font-size:26px;font-weight:800;display:flex;align-items:center;justify-content:center}
+  .character{position:absolute;right:60px;bottom:80px;width:220px;height:auto;opacity:0.92;pointer-events:none}
+  .cta-card .character{opacity:0.25}
 `;
 
 function wrapHtml(inner) {
@@ -102,6 +108,7 @@ function renderCardHtml(input) {
   const titleSize = layout.titleSize ?? "md";
   const bodySize = layout.bodySize ?? "md";
   const bodyOffset = Number(layout.bodyOffset ?? 0);
+  const charSrc = CHARACTER_IMG;
   const pageNum = `${input.card_no} / ${input.total}`;
 
   if (input.role === "hook") {
@@ -118,6 +125,7 @@ function renderCardHtml(input) {
     <h1 class="hook-title" style="font-size:${titlePx}px;${titleAlign === "center" ? "" : "text-align:left;"}">${titleHtml}</h1>
     ${sub ? `<p class="hook-sub" style="font-size:${subPx}px;margin-top:${44 + bodyOffset}px">${escMultiline(sub)}</p>` : ""}
   </div>
+  <img class="character" src="${charSrc}" alt="" />
   <div class="pagenum">${pageNum}</div>
 </section>`;
     return wrapHtml(inner);
@@ -133,6 +141,7 @@ function renderCardHtml(input) {
   <ul class="cta-list" style="margin-top:${64 + bodyOffset}px">
 ${items.map((it, i) => `    <li><span class="num">${i + 1}</span>${esc(it)}</li>`).join("\n")}
   </ul>
+  <img class="character" src="${charSrc}" alt="" />
   <div class="pagenum">${pageNum}</div>
 </section>`;
     return wrapHtml(inner);
@@ -149,6 +158,7 @@ ${items.map((it, i) => `    <li><span class="num">${i + 1}</span>${esc(it)}</li>
   <h2 class="body-title" style="font-size:${titlePx}px;margin-top:28px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
   <p class="body-text" style="font-size:${bodyPx}px;margin-top:${60 + bodyOffset}px;text-align:${titleAlign}">${escMultiline(input.body)}</p>
   ${pointText ? `<div class="point-box"><span class="point-label">${esc(pointLabel)}</span>${esc(pointText)}</div>` : ""}
+  <img class="character" src="${charSrc}" alt="" />
   <div class="pagenum">${pageNum}</div>
 </section>`;
   return wrapHtml(inner);

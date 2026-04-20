@@ -20,6 +20,7 @@ type NoticeRow = {
   published_at: string | Date | null;
   effective_at: string | Date | null;
   summary: string | null;
+  detail_summary: string | null;
   checklist: string | null;
   source_urls: string[] | null;
   source: "auto" | "manual";
@@ -49,8 +50,14 @@ function fmtDate(d: string | Date | null | undefined): string {
 export default async function NoticeDetailPage({ params, searchParams }: Params & Search) {
   const { id } = await params;
   const { tab: rawTab } = await searchParams;
-  const tab: "info" | "script" | "cardnews" =
-    rawTab === "script" ? "script" : rawTab === "cardnews" ? "cardnews" : "info";
+  const tab: "info" | "detail" | "script" | "cardnews" =
+    rawTab === "script"
+      ? "script"
+      : rawTab === "cardnews"
+      ? "cardnews"
+      : rawTab === "detail"
+      ? "detail"
+      : "info";
 
   const noticeId = Number(id);
   const [noticeRowsRaw, scriptRowsRaw, setRowsRaw] = await Promise.all([
@@ -104,6 +111,11 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
             label="📋 공지"
           />
           <TabLink
+            href={`/notices/${notice.id}?tab=detail`}
+            active={tab === "detail"}
+            label={notice.detail_summary ? "✍️ 핵심요약" : "✍️ 핵심요약 (없음)"}
+          />
+          <TabLink
             href={`/notices/${notice.id}?tab=script`}
             active={tab === "script"}
             label={scripts.length ? `🎬 대본 (${scripts.length})` : "🎬 대본 (없음)"}
@@ -117,8 +129,11 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
       </nav>
 
       {tab === "info" && <NoticeInfoPanel notice={notice} />}
+      {tab === "detail" && <DetailSummaryPanel notice={notice} />}
       {tab === "script" && <ScriptPanel noticeId={noticeId} scripts={scripts} />}
-      {tab === "cardnews" && <CardNewsPanel set={cardSet} slides={slides} />}
+      {tab === "cardnews" && (
+        <CardNewsPanel set={cardSet} slides={slides} noticeTitle={notice.title} />
+      )}
     </main>
   );
 }
@@ -147,14 +162,37 @@ function NoticeInfoPanel({ notice }: { notice: NoticeRow }) {
         <Info label="시행일" value={fmtDate(notice.effective_at)} />
       </div>
 
-      {notice.summary && (
-        <section>
-          <h3 className="mb-2 text-xs font-semibold text-neutral-500">핵심 변경사항</h3>
-          <div className="whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-sm leading-relaxed">
-            {notice.summary}
-          </div>
-        </section>
-      )}
+      {notice.summary && (() => {
+        const items = parseNumberedList(notice.summary);
+        return (
+          <section>
+            <h3 className="mb-2 flex items-center gap-2 text-xs font-semibold text-neutral-500">
+              핵심 체크리스트
+              {items.length > 0 && (
+                <span className="rounded-full bg-neutral-900 px-2 py-0.5 text-[10px] font-medium text-white">
+                  총 {items.length}개
+                </span>
+              )}
+            </h3>
+            {items.length > 0 ? (
+              <ol className="space-y-2 rounded-lg bg-neutral-50 p-4 text-sm leading-relaxed">
+                {items.map((it, i) => (
+                  <li key={i} className="flex gap-2">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[10px] font-semibold text-white">
+                      {i + 1}
+                    </span>
+                    <span className="whitespace-pre-wrap">{it}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <div className="whitespace-pre-wrap rounded-lg bg-neutral-50 p-4 text-sm leading-relaxed">
+                {notice.summary}
+              </div>
+            )}
+          </section>
+        );
+      })()}
 
       {notice.checklist && (
         <section>
@@ -194,6 +232,56 @@ function Info({ label, value }: { label: string; value: string }) {
       <div className="text-xs text-neutral-500">{label}</div>
       <div className="mt-0.5 font-medium">{value}</div>
     </div>
+  );
+}
+
+/** "1. A\n2. B\n3. C" 형태 문자열을 ["A", "B", "C"] 배열로 파싱. 파싱 불가하면 빈 배열. */
+function parseNumberedList(text: string): string[] {
+  if (!text) return [];
+  const lines = text.split(/\r?\n/);
+  const items: string[] = [];
+  let current = "";
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const m = line.match(/^\s*(?:\d+)\s*[.)]\s+(.*)$/);
+    if (m) {
+      if (current) items.push(current.trim());
+      current = m[1];
+    } else if (current && line.trim()) {
+      // 번호 없는 이어지는 줄 → 현재 항목에 덧붙임
+      current += " " + line.trim();
+    }
+  }
+  if (current) items.push(current.trim());
+  return items;
+}
+
+function DetailSummaryPanel({ notice }: { notice: NoticeRow }) {
+  if (!notice.detail_summary) {
+    return (
+      <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-12 text-center text-sm text-neutral-500">
+        아직 상세 요약이 생성되지 않았습니다.
+        <br />
+        <code className="mt-2 inline-block rounded bg-neutral-100 px-2 py-0.5 text-[11px]">
+          npm run cron:collect -- --reprocess
+        </code>
+        로 재가공해 주세요.
+      </div>
+    );
+  }
+
+  return (
+    <article className="space-y-4 rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-6">
+      <header className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-neutral-700">✍️ 핵심요약</h2>
+        <span className="text-[11px] text-neutral-400">
+          대본·카드뉴스 생성에 이 내용이 입력으로 사용됩니다
+        </span>
+      </header>
+      <div className="whitespace-pre-wrap text-sm leading-relaxed text-neutral-800">
+        {notice.detail_summary}
+      </div>
+    </article>
   );
 }
 

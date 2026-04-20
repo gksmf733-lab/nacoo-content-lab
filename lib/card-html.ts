@@ -1,6 +1,8 @@
 // 카드뉴스 HTML 생성기 — 단일 진실 소스 (SSOT)
 // PATCH API, 로컬 저장 CLI, 수동 생성 스크립트 모두 이 함수를 호출한다.
 
+import { CHARACTER_DATA_URI } from "./character-data-uri";
+
 export type CardRole = "hook" | "context" | "body" | "cta";
 
 export type CardLayout = {
@@ -29,12 +31,20 @@ export type CardInput = {
   title: string;
   body: string;
   layout?: CardLayout | null;
+  hashtags?: string[];
+  /** 캐릭터 이미지 base URL (로컬: file:///..., 서버: 빈 문자열) */
+  baseUrl?: string;
 };
 
 const COLOR_BG = "#F7F5F0";
 const COLOR_INK = "#1A1A1A";
 const COLOR_ACCENT = "#E8572C";
+const COLOR_ACCENT_DARK = "#C4411A";
+const COLOR_ACCENT_LIGHT = "#FDF0EB";
 const BRAND = "나쿠 콘텐츠연구소";
+
+/** 캐릭터 이미지 — base64 data URI로 임베드 (미들웨어 경로 문제 없음) */
+const CHARACTER_IMG = CHARACTER_DATA_URI;
 
 const TITLE_SIZE_PX: Record<NonNullable<CardLayout["titleSize"]>, number> = {
   sm: 54,
@@ -58,7 +68,6 @@ const BODY_SIZE_PX: Record<NonNullable<CardLayout["bodySize"]>, number> = {
 
 /** 문자열 첫 이모지를 뽑아 반환 (없으면 빈 문자열) + 나머지 텍스트 */
 function splitLeadingEmoji(s: string): { icon: string; rest: string } {
-  // Emoji property \p{Extended_Pictographic}
   const m = s.match(/^\s*(\p{Extended_Pictographic})\s*/u);
   if (m) return { icon: m[1], rest: s.slice(m[0].length) };
   return { icon: "", rest: s };
@@ -74,25 +83,17 @@ function esc(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-/** 본문/제목에 자동 `<br/>` 삽입: 문장부호 근처에서 줄바꿈 */
+/** 본문/제목에 자동 `<br/>` 삽입 */
 function autoBreakTitle(s: string): string {
   const clean = esc(s).replace(/\n+/g, " ").trim();
-  // 14자 이내면 한 줄
   if (clean.length <= 14) return clean;
-  // 가운데 근처 공백에서 쪼개기
   const mid = Math.floor(clean.length / 2);
   let splitAt = -1;
   for (let d = 0; d < clean.length; d++) {
     const l = mid - d;
     const r = mid + d;
-    if (l > 0 && clean[l] === " ") {
-      splitAt = l;
-      break;
-    }
-    if (r < clean.length && clean[r] === " ") {
-      splitAt = r;
-      break;
-    }
+    if (l > 0 && clean[l] === " ") { splitAt = l; break; }
+    if (r < clean.length && clean[r] === " ") { splitAt = r; break; }
   }
   if (splitAt === -1) return clean;
   return clean.slice(0, splitAt) + "<br/>" + clean.slice(splitAt + 1);
@@ -109,20 +110,19 @@ function parseCtaItems(body: string): string[] {
     const parts = body.split(/[①②③④⑤⑥⑦⑧⑨⑩]/).map((p) => p.trim()).filter(Boolean);
     return parts.slice(0, 5);
   }
-  // "1) ..." 또는 "1. ..."
   const numbered = body.split(/\s*(?:^|\s)\d+[).]\s*/).map((p) => p.trim()).filter(Boolean);
   if (numbered.length > 1) return numbered.slice(0, 5);
-  // 마지막: 온점/콤마로 분리
-  return body
-    .split(/[·.,]/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-    .slice(0, 5);
+  return body.split(/[·.,]/).map((p) => p.trim()).filter(Boolean).slice(0, 5);
+}
+
+/** body 본문을 줄 단위로 파싱해 리스트 아이템 배열 반환 */
+function parseBodyLines(body: string): string[] {
+  return body.split("\n").map((l) => l.trim()).filter(Boolean);
 }
 
 const BASE_STYLE = `
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  html,body{width:1080px;height:1350px}
+  html,body{width:1080px;height:1350px;overflow:hidden}
   body{
     font-family:"Pretendard Variable",Pretendard,-apple-system,sans-serif;
     background:${COLOR_BG};
@@ -131,29 +131,265 @@ const BASE_STYLE = `
   }
   section.card{
     position:relative;width:1080px;height:1350px;
-    padding:120px 100px;display:flex;flex-direction:column;
+    padding:100px 100px 110px;display:flex;flex-direction:column;overflow:hidden;
   }
-  .brand{font-size:22px;font-weight:500;letter-spacing:0.02em;color:${COLOR_INK};opacity:0.55}
-  .pagenum{position:absolute;right:100px;bottom:120px;font-size:22px;font-weight:500;color:${COLOR_INK};opacity:0.55}
-  .dot{display:inline-block;width:14px;height:14px;border-radius:50%;background:${COLOR_ACCENT};margin-right:10px;vertical-align:middle}
-  .tag{display:inline-block;font-size:22px;font-weight:600;color:${COLOR_ACCENT};letter-spacing:0.02em;text-transform:uppercase}
-  .hook-wrap{flex:1;display:flex;flex-direction:column;justify-content:center}
-  .hook-icon{font-size:140px;margin-bottom:20px;color:${COLOR_ACCENT}}
-  .hook-title{font-weight:800;line-height:1.22;letter-spacing:-0.02em}
-  .hook-sub{margin-top:44px;font-weight:500;line-height:1.5;color:${COLOR_INK};opacity:0.72;font-size:36px}
-  .body-title{font-weight:800;line-height:1.22;letter-spacing:-0.02em}
-  .body-text{font-weight:500;line-height:1.6;color:${COLOR_INK};opacity:0.82}
-  .point-box{margin-top:auto;padding:40px 44px;background:#FFFFFF;border:2px solid ${COLOR_INK};border-radius:24px;font-size:28px;font-weight:600;line-height:1.5;color:${COLOR_INK}}
-  .point-box .point-label{display:block;font-size:22px;font-weight:700;color:${COLOR_ACCENT};margin-bottom:10px;letter-spacing:0.04em}
-  .cta-card{background:${COLOR_ACCENT};color:#FFFFFF}
-  .cta-card .brand,.cta-card .pagenum{color:#FFFFFF;opacity:0.8}
-  .cta-card .dot{background:#FFFFFF}
-  .cta-card .tag{color:#FFFFFF !important}
-  .cta-title{margin-top:28px;font-size:78px;font-weight:800;line-height:1.2;letter-spacing:-0.02em}
-  .cta-list{margin-top:64px;list-style:none;display:flex;flex-direction:column;gap:28px}
-  .cta-list li{font-size:36px;font-weight:600;line-height:1.45;padding-left:64px;position:relative}
-  .cta-list li .num{position:absolute;left:0;top:0;width:48px;height:48px;border-radius:50%;background:#FFFFFF;color:${COLOR_ACCENT};font-size:26px;font-weight:800;display:flex;align-items:center;justify-content:center}
+
+  /* ── 브랜드 헤더 ── */
+  .brand-bar{display:flex;align-items:center;gap:10px;flex-shrink:0}
+  .brand-dot{width:12px;height:12px;border-radius:50%;background:${COLOR_ACCENT};flex-shrink:0}
+  .brand-name{font-size:22px;font-weight:600;letter-spacing:0.04em;color:${COLOR_INK};opacity:0.55}
+
+  /* ── 브랜드 푸터 ── */
+  .brand-footer{
+    position:absolute;left:0;right:0;bottom:0;
+    height:70px;
+    background:${COLOR_INK};
+    display:flex;align-items:center;justify-content:space-between;
+    padding:0 100px;
+  }
+  .brand-footer-name{font-size:20px;font-weight:600;color:#FFFFFF;opacity:0.7;letter-spacing:0.06em}
+  .brand-footer-badge{
+    width:48px;height:48px;border-radius:50%;
+    background:${COLOR_ACCENT};
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;font-weight:800;color:#FFFFFF;letter-spacing:-0.02em;
+  }
+
+  /* ── 페이지 번호 뱃지 ── */
+  .pagenum-badge{
+    position:absolute;right:100px;bottom:86px;
+    display:flex;align-items:center;gap:6px;
+  }
+  .pagenum-current{
+    width:44px;height:44px;border-radius:50%;
+    background:${COLOR_ACCENT};
+    display:flex;align-items:center;justify-content:center;
+    font-size:18px;font-weight:800;color:#FFFFFF;
+  }
+  .pagenum-sep{font-size:16px;font-weight:500;color:${COLOR_INK};opacity:0.35}
+  .pagenum-total{font-size:18px;font-weight:600;color:${COLOR_INK};opacity:0.45}
+
+  /* ── 태그 칩 ── */
+  .tag-chip{
+    display:inline-flex;align-items:center;gap:8px;
+    margin-top:36px;flex-shrink:0;
+  }
+  .tag-chip-bar{width:28px;height:4px;border-radius:2px;background:${COLOR_ACCENT}}
+  .tag-chip-text{font-size:20px;font-weight:700;color:${COLOR_ACCENT};letter-spacing:0.08em;text-transform:uppercase}
+
+  /* ── HOOK ── */
+  .hook-bg-split{
+    position:absolute;top:0;left:0;right:0;bottom:0;
+    background:linear-gradient(145deg, ${COLOR_ACCENT} 0%, ${COLOR_ACCENT} 48%, ${COLOR_BG} 48%);
+    z-index:0;
+  }
+  .hook-bg-circle{
+    position:absolute;top:-160px;right:-160px;
+    width:600px;height:600px;border-radius:50%;
+    background:rgba(255,255,255,0.08);
+    z-index:1;
+  }
+  .hook-bg-circle2{
+    position:absolute;bottom:200px;left:-120px;
+    width:380px;height:380px;border-radius:50%;
+    background:rgba(255,255,255,0.06);
+    z-index:1;
+  }
+  .hook-content{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center}
+  .hook-icon-wrap{
+    width:160px;height:160px;border-radius:32px;
+    background:rgba(255,255,255,0.18);
+    display:flex;align-items:center;justify-content:center;
+    font-size:90px;margin-bottom:36px;
+    backdrop-filter:blur(4px);
+    border:2px solid rgba(255,255,255,0.25);
+  }
+  .hook-title{
+    font-weight:800;line-height:1.2;letter-spacing:-0.025em;
+    color:#FFFFFF;
+  }
+  .hook-title-highlight{
+    display:inline;
+    background:rgba(255,255,255,0.22);
+    border-radius:8px;
+    padding:0 12px;
+  }
+  .hook-divider{
+    width:60px;height:5px;border-radius:3px;
+    background:rgba(255,255,255,0.5);
+    margin:40px 0;
+  }
+  .hook-sub{
+    font-weight:500;line-height:1.55;
+    color:rgba(255,255,255,0.88);
+    padding:24px 28px;
+    background:rgba(255,255,255,0.12);
+    border-radius:16px;
+    border-left:4px solid rgba(255,255,255,0.6);
+  }
+  .hook-card .brand-bar .brand-name{color:#FFFFFF;opacity:0.75}
+  .hook-card .brand-bar .brand-dot{background:#FFFFFF}
+
+  /* ── CONTEXT ── */
+  .context-border-line{
+    position:absolute;left:0;top:0;bottom:70px;
+    width:10px;background:${COLOR_ACCENT};border-radius:0 0 0 0;
+  }
+  .context-body-wrap{
+    margin-top:36px;flex:1;display:flex;flex-direction:column;
+  }
+  .context-body-text{
+    font-weight:500;line-height:1.75;color:${COLOR_INK};
+    font-size:34px;opacity:0.85;
+    padding-left:20px;
+    border-left:3px solid rgba(232,87,44,0.25);
+  }
+  .context-point-box{
+    margin-top:auto;margin-bottom:86px;
+    padding:36px 44px;
+    background:${COLOR_ACCENT};
+    border-radius:20px;
+    display:flex;flex-direction:column;gap:10px;
+    box-shadow:0 8px 32px rgba(232,87,44,0.28);
+  }
+  .context-point-label{
+    font-size:18px;font-weight:700;color:rgba(255,255,255,0.75);
+    letter-spacing:0.08em;text-transform:uppercase;
+  }
+  .context-point-text{
+    font-size:30px;font-weight:700;color:#FFFFFF;line-height:1.45;
+  }
+
+  /* ── BODY ── */
+  .body-title{font-weight:800;line-height:1.22;letter-spacing:-0.02em;margin-top:28px}
+  .body-divider{
+    width:48px;height:5px;border-radius:3px;
+    background:${COLOR_ACCENT};
+    margin:28px 0;flex-shrink:0;
+  }
+  .body-list{
+    list-style:none;display:flex;flex-direction:column;gap:20px;
+    flex:1;
+  }
+  .body-list-item{
+    display:flex;align-items:flex-start;gap:18px;
+    font-size:34px;font-weight:500;line-height:1.6;color:${COLOR_INK};opacity:0.86;
+  }
+  .body-list-bullet{
+    flex-shrink:0;margin-top:10px;
+    width:10px;height:10px;border-radius:50%;
+    background:${COLOR_ACCENT};
+  }
+  .body-point-box{
+    margin-top:auto;margin-bottom:86px;
+    padding:32px 44px;
+    background:${COLOR_ACCENT_LIGHT};
+    border:2px solid ${COLOR_ACCENT};
+    border-radius:20px;
+    display:flex;flex-direction:column;gap:8px;
+    position:relative;overflow:hidden;
+    flex-shrink:0;
+  }
+  .body-point-box::before{
+    content:"";
+    position:absolute;top:0;left:0;bottom:0;
+    width:6px;background:${COLOR_ACCENT};
+  }
+  .body-point-label{
+    font-size:17px;font-weight:700;color:${COLOR_ACCENT};
+    letter-spacing:0.08em;text-transform:uppercase;padding-left:18px;
+  }
+  .body-point-text{
+    font-size:28px;font-weight:700;color:${COLOR_INK};line-height:1.5;padding-left:18px;
+  }
+
+  /* ── CTA ── */
+  .cta-card{background:${COLOR_ACCENT};color:#FFFFFF;overflow:hidden}
+  .cta-pattern{
+    position:absolute;top:0;left:0;right:0;bottom:0;
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(255,255,255,0.07) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(0,0,0,0.08) 0%, transparent 50%);
+    z-index:0;
+  }
+  .cta-pattern-lines{
+    position:absolute;top:0;left:0;right:0;bottom:0;
+    background-image:repeating-linear-gradient(
+      -45deg,
+      transparent,
+      transparent 40px,
+      rgba(255,255,255,0.025) 40px,
+      rgba(255,255,255,0.025) 41px
+    );
+    z-index:0;
+  }
+  .cta-content{position:relative;z-index:2;display:flex;flex-direction:column;flex:1}
+  .cta-card .brand-bar .brand-name{color:#FFFFFF;opacity:0.75}
+  .cta-card .brand-bar .brand-dot{background:#FFFFFF}
+  .cta-tag{
+    display:inline-flex;align-items:center;gap:10px;
+    margin-top:40px;flex-shrink:0;
+  }
+  .cta-tag-bar{width:28px;height:4px;border-radius:2px;background:rgba(255,255,255,0.6)}
+  .cta-tag-text{font-size:20px;font-weight:700;color:rgba(255,255,255,0.85);letter-spacing:0.1em}
+  .cta-title{
+    margin-top:28px;font-size:76px;font-weight:800;
+    line-height:1.18;letter-spacing:-0.025em;color:#FFFFFF;flex-shrink:0;
+  }
+  .cta-list{
+    margin-top:48px;list-style:none;
+    display:flex;flex-direction:column;gap:22px;flex:1;
+  }
+  .cta-list li{
+    display:flex;align-items:flex-start;gap:22px;
+    font-size:34px;font-weight:600;line-height:1.5;color:rgba(255,255,255,0.92);
+  }
+  .cta-num{
+    flex-shrink:0;
+    width:52px;height:52px;border-radius:50%;
+    background:#FFFFFF;
+    color:${COLOR_ACCENT};
+    font-size:24px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 4px 12px rgba(0,0,0,0.15);
+    margin-top:2px;
+  }
+  .cta-hashtags{
+    margin-top:auto;
+    display:flex;flex-wrap:wrap;gap:10px;
+    padding-top:20px;padding-bottom:86px;
+    flex-shrink:0;
+  }
+  .cta-hashtag{
+    font-size:19px;font-weight:500;color:rgba(255,255,255,0.6);
+    background:rgba(255,255,255,0.1);
+    border-radius:30px;padding:6px 16px;
+  }
+
+  /* CTA 카드 푸터/뱃지 색상 오버라이드 */
+  .cta-card .brand-footer{background:rgba(0,0,0,0.25)}
+  .cta-card .brand-footer-name{color:rgba(255,255,255,0.65)}
+  .cta-card .brand-footer-badge{background:#FFFFFF;color:${COLOR_ACCENT}}
+  .cta-card .pagenum-badge .pagenum-current{background:#FFFFFF;color:${COLOR_ACCENT}}
+  .cta-card .pagenum-badge .pagenum-sep{color:rgba(255,255,255,0.4)}
+  .cta-card .pagenum-badge .pagenum-total{color:rgba(255,255,255,0.55)}
+
+  /* 캐릭터 */
+  .character{position:absolute;right:48px;bottom:70px;width:200px;height:auto;opacity:0.90;pointer-events:none;z-index:3}
+  .cta-card .character{opacity:0.20}
 `;
+
+function brandFooter(cardNo: number, total: number): string {
+  return `
+  <div class="brand-footer">
+    <span class="brand-footer-name">${esc(BRAND)}</span>
+  </div>
+  <div class="pagenum-badge">
+    <div class="pagenum-current">${cardNo}</div>
+    <span class="pagenum-sep">/</span>
+    <span class="pagenum-total">${total}</span>
+  </div>`;
+}
 
 function wrapHtml(inner: string): string {
   return `<!doctype html>
@@ -174,9 +410,9 @@ export function renderCardHtml(input: CardInput): string {
   const titleSize = layout.titleSize ?? "md";
   const bodySize = layout.bodySize ?? "md";
   const bodyOffset = Number(layout.bodyOffset ?? 0);
+  const charSrc = CHARACTER_IMG;
 
-  const pageNum = `${input.card_no} / ${input.total}`;
-
+  // ── HOOK ──────────────────────────────────────────────────────────────────
   if (input.role === "hook") {
     const { icon: leadIcon, rest } = splitLeadingEmoji(input.title);
     const icon = layout.icon ?? leadIcon ?? "";
@@ -184,49 +420,136 @@ export function renderCardHtml(input: CardInput): string {
     const sub = layout.sub ?? input.body.split("\n")[0] ?? "";
     const titlePx = HOOK_TITLE_SIZE_PX[titleSize];
     const subPx = BODY_SIZE_PX[bodySize];
-    const inner = `<section class="card">
-  <div class="brand"><span class="dot"></span>${esc(BRAND)}</div>
-  <div class="hook-wrap" style="text-align:${titleAlign}">
-    ${icon ? `<div class="hook-icon">${esc(icon)}</div>` : ""}
-    <h1 class="hook-title" style="font-size:${titlePx}px;${titleAlign === "center" ? "" : "text-align:left;"}">${titleHtml}</h1>
-    ${sub ? `<p class="hook-sub" style="font-size:${subPx}px;margin-top:${44 + bodyOffset}px">${escMultiline(sub)}</p>` : ""}
+
+    const inner = `<section class="card hook-card" style="background:${COLOR_BG}">
+  <div class="hook-bg-split"></div>
+  <div class="hook-bg-circle"></div>
+  <div class="hook-bg-circle2"></div>
+
+  <div class="brand-bar" style="position:relative;z-index:2">
+    <div class="brand-dot"></div>
+    <span class="brand-name">${esc(BRAND)}</span>
   </div>
-  <div class="pagenum">${pageNum}</div>
+
+  <div class="hook-content" style="text-align:${titleAlign};margin-top:${40 + bodyOffset}px">
+    ${icon ? `<div class="hook-icon-wrap"${titleAlign === "center" ? ' style="margin:0 auto 36px"' : ""}>${esc(icon)}</div>` : ""}
+    <h1 class="hook-title" style="font-size:${titlePx}px${titleAlign === "left" ? ";text-align:left" : ""}">${titleHtml}</h1>
+    ${sub ? `<div class="hook-divider"${titleAlign === "center" ? ' style="margin:40px auto"' : ""}></div>
+    <p class="hook-sub" style="font-size:${subPx}px;text-align:left">${escMultiline(sub)}</p>` : ""}
+  </div>
+
+  <img class="character" src="${charSrc}" alt="" />
+  ${brandFooter(input.card_no, input.total)}
 </section>`;
     return wrapHtml(inner);
   }
 
+  // ── CTA ───────────────────────────────────────────────────────────────────
   if (input.role === "cta") {
     const titlePx = HOOK_TITLE_SIZE_PX[titleSize] - 18;
     const items = parseCtaItems(input.body);
+    const hashtags: string[] = (input as CardInput & { hashtags?: string[] }).hashtags ?? [];
+
     const inner = `<section class="card cta-card">
-  <div class="brand"><span class="dot"></span>${esc(BRAND)}</div>
-  <div class="tag" style="margin-top:40px">ACTION</div>
-  <h2 class="cta-title" style="font-size:${titlePx}px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
-  <ul class="cta-list" style="margin-top:${64 + bodyOffset}px">
-${items.map((it, i) => `    <li><span class="num">${i + 1}</span>${esc(it)}</li>`).join("\n")}
-  </ul>
-  <div class="pagenum">${pageNum}</div>
+  <div class="cta-pattern"></div>
+  <div class="cta-pattern-lines"></div>
+
+  <div class="cta-content">
+    <div class="brand-bar">
+      <div class="brand-dot"></div>
+      <span class="brand-name">${esc(BRAND)}</span>
+    </div>
+
+    <div class="cta-tag">
+      <div class="cta-tag-bar"></div>
+      <span class="cta-tag-text">ACTION</span>
+    </div>
+
+    <h2 class="cta-title" style="font-size:${titlePx}px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
+
+    <ul class="cta-list" style="margin-top:${48 + bodyOffset}px">
+${items.map((it, i) => `      <li><div class="cta-num">${i + 1}</div><span>${esc(it)}</span></li>`).join("\n")}
+    </ul>
+
+    ${hashtags.length > 0 ? `<div class="cta-hashtags">
+${hashtags.map((t) => `      <span class="cta-hashtag">${esc(t)}</span>`).join("\n")}
+    </div>` : ""}
+  </div>
+
+  <img class="character" src="${charSrc}" alt="" />
+  ${brandFooter(input.card_no, input.total)}
 </section>`;
     return wrapHtml(inner);
   }
 
-  // context | body
-  const tagText =
-    input.role === "context"
-      ? "CONTEXT"
-      : `POINT ${Math.max(1, input.card_no - 2)}`;
+  // ── CONTEXT ───────────────────────────────────────────────────────────────
+  if (input.role === "context") {
+    const titlePx = TITLE_SIZE_PX[titleSize];
+    const pointLabel = layout.pointLabel ?? "KEY POINT";
+    const pointText = layout.pointText ?? "";
+
+    const inner = `<section class="card" style="padding-left:110px">
+  <div class="context-border-line"></div>
+
+  <div class="brand-bar">
+    <div class="brand-dot"></div>
+    <span class="brand-name">${esc(BRAND)}</span>
+  </div>
+
+  <div class="tag-chip">
+    <div class="tag-chip-bar"></div>
+    <span class="tag-chip-text">CONTEXT</span>
+  </div>
+
+  <h2 class="body-title" style="font-size:${titlePx}px;margin-top:28px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
+
+  <div class="context-body-wrap" style="margin-top:${36 + bodyOffset}px">
+    <p class="context-body-text">${escMultiline(input.body)}</p>
+  </div>
+
+  ${pointText ? `<div class="context-point-box">
+    <span class="context-point-label">${esc(pointLabel)}</span>
+    <span class="context-point-text">${esc(pointText)}</span>
+  </div>` : ""}
+
+  <img class="character" src="${charSrc}" alt="" />
+  ${brandFooter(input.card_no, input.total)}
+</section>`;
+    return wrapHtml(inner);
+  }
+
+  // ── BODY ──────────────────────────────────────────────────────────────────
+  const tagIndex = Math.max(1, input.card_no - 2);
   const titlePx = TITLE_SIZE_PX[titleSize];
-  const bodyPx = BODY_SIZE_PX[bodySize];
   const pointLabel = layout.pointLabel ?? "POINT";
   const pointText = layout.pointText ?? "";
+  const lines = parseBodyLines(input.body);
+
   const inner = `<section class="card">
-  <div class="brand"><span class="dot"></span>${esc(BRAND)}</div>
-  <div class="tag" style="margin-top:40px">${esc(tagText)}</div>
-  <h2 class="body-title" style="font-size:${titlePx}px;margin-top:28px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
-  <p class="body-text" style="font-size:${bodyPx}px;margin-top:${60 + bodyOffset}px;text-align:${titleAlign}">${escMultiline(input.body)}</p>
-  ${pointText ? `<div class="point-box"><span class="point-label">${esc(pointLabel)}</span>${esc(pointText)}</div>` : ""}
-  <div class="pagenum">${pageNum}</div>
+  <div class="brand-bar">
+    <div class="brand-dot"></div>
+    <span class="brand-name">${esc(BRAND)}</span>
+  </div>
+
+  <div class="tag-chip">
+    <div class="tag-chip-bar"></div>
+    <span class="tag-chip-text">POINT ${tagIndex}</span>
+  </div>
+
+  <h2 class="body-title" style="font-size:${titlePx}px;text-align:${titleAlign}">${autoBreakTitle(input.title)}</h2>
+  <div class="body-divider"></div>
+
+  <ul class="body-list" style="margin-top:${bodyOffset}px">
+${lines.map((line) => `    <li class="body-list-item"><div class="body-list-bullet"></div><span>${esc(line)}</span></li>`).join("\n")}
+  </ul>
+
+  ${pointText ? `<div class="body-point-box">
+    <span class="body-point-label">${esc(pointLabel)}</span>
+    <span class="body-point-text">${esc(pointText)}</span>
+  </div>` : ""}
+
+  <img class="character" src="${charSrc}" alt="" />
+  ${brandFooter(input.card_no, input.total)}
 </section>`;
   return wrapHtml(inner);
 }

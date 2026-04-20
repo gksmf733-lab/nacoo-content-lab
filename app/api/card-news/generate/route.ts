@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
+import { callClaude, parseJsonFromResponse } from "@/lib/claude-cli.mjs";
 import { sql } from "@/lib/db";
 import { isAuthed, checkApiToken } from "@/lib/auth";
 import { renderCardHtml, normalizeRole } from "@/lib/card-html";
@@ -27,6 +27,7 @@ type ClaudeSlide = {
 function buildPrompt(notice: {
   title: string;
   summary: string | null;
+  detail_summary: string | null;
   checklist: string | null;
   category: string | null;
   importance: string | null;
@@ -36,6 +37,8 @@ function buildPrompt(notice: {
     ? `\n\n## 릴스 대본 (참고용)\n${script.body_markdown}`
     : "";
 
+  const primaryContext = notice.detail_summary ?? notice.summary ?? "없음";
+
   return `당신은 네이버 스마트플레이스 자영업자를 위한 카드뉴스 전문 카피라이터입니다.
 아래 공지 내용을 바탕으로 인스타그램 카드뉴스 6장을 JSON으로 생성하세요.
 
@@ -43,8 +46,10 @@ function buildPrompt(notice: {
 - 제목: ${notice.title}
 - 카테고리: ${notice.category ?? "일반"}
 - 중요도: ${notice.importance ?? "보통"}
-- 요약: ${notice.summary ?? "없음"}
-- 체크리스트: ${notice.checklist ?? "없음"}
+- 핵심요약(상세):
+${primaryContext}
+- 핵심 체크리스트: ${notice.summary ?? "없음"}
+- 운영자 체크리스트: ${notice.checklist ?? "없음"}
 - 참고 링크: ${(notice.source_urls ?? []).join(", ") || "없음"}${scriptSection}
 
 ## 카드 구성 규칙
@@ -94,14 +99,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다." },
-      { status: 500 }
-    );
-  }
-
   const body = await req.json();
   const noticeId = Number(body.notice_id);
   if (!Number.isFinite(noticeId)) {
@@ -110,7 +107,7 @@ export async function POST(req: NextRequest) {
 
   // 1. 공지 조회
   const noticeRows = (await sql`
-    SELECT id, title, category, importance, summary, checklist, source_urls
+    SELECT id, title, category, importance, summary, detail_summary, checklist, source_urls
     FROM notices WHERE id = ${noticeId} LIMIT 1
   `) as unknown as Array<{
     id: number;
@@ -118,6 +115,7 @@ export async function POST(req: NextRequest) {
     category: string | null;
     importance: string | null;
     summary: string | null;
+    detail_summary: string | null;
     checklist: string | null;
     source_urls: string[] | null;
   }>;
@@ -136,29 +134,9 @@ export async function POST(req: NextRequest) {
   // 3. Claude 호출
   let slides: SlideInput[];
   try {
-    const client = new Anthropic({ apiKey });
     const prompt = buildPrompt(notice, script);
-    const result = await client.messages.create({
-      model: "claude-sonnet-4-6",
-      max_tokens: 4096,
-      temperature: 0.7,
-      messages: [{ role: "user", content: prompt }],
-    });
-
-    const text = result.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("");
-
-    // JSON 파싱 (코드블록 래핑 대비)
-    let parsed: { slides: ClaudeSlide[] };
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      const match = text.match(/\{[\s\S]*\}/);
-      if (!match) throw new Error("Claude 응답에서 JSON을 추출할 수 없습니다.");
-      parsed = JSON.parse(match[0]);
-    }
+    const text = await callClaude(prompt);
+    const parsed = parseJsonFromResponse(text) as { slides: ClaudeSlide[] };
 
     if (!Array.isArray(parsed.slides) || parsed.slides.length === 0) {
       throw new Error("슬라이드 배열이 비어 있습니다.");
@@ -190,7 +168,7 @@ export async function POST(req: NextRequest) {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
-      { error: `Gemini 생성 실패: ${message}` },
+      { error: `Claude 생성 실패: ${message}` },
       { status: 500 }
     );
   }
