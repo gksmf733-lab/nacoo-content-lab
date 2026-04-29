@@ -132,7 +132,12 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
       {tab === "detail" && <DetailSummaryPanel notice={notice} />}
       {tab === "script" && <ScriptPanel noticeId={noticeId} scripts={scripts} />}
       {tab === "cardnews" && (
-        <CardNewsPanel set={cardSet} slides={slides} noticeTitle={notice.title} />
+        <CardNewsPanel
+          set={cardSet}
+          slides={slides}
+          noticeTitle={notice.title}
+          noticeId={noticeId}
+        />
       )}
     </main>
   );

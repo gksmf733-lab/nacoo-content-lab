@@ -39,8 +39,9 @@ function buildPrompt(notice: {
 
   const primaryContext = notice.detail_summary ?? notice.summary ?? "없음";
 
-  return `당신은 네이버 스마트플레이스 자영업자를 위한 카드뉴스 전문 카피라이터입니다.
+  return `당신은 나쿠(naoo) 콘텐츠연구소의 카드뉴스 전문 카피라이터입니다.
 아래 공지 내용을 바탕으로 인스타그램 카드뉴스 6장을 JSON으로 생성하세요.
+톤은 친근하고 실용적, 과장 없이 사실 중심. 독자는 네이버 스마트플레이스를 쓰는 자영업자.
 
 ## 공지 정보
 - 제목: ${notice.title}
@@ -52,42 +53,47 @@ ${primaryContext}
 - 운영자 체크리스트: ${notice.checklist ?? "없음"}
 - 참고 링크: ${(notice.source_urls ?? []).join(", ") || "없음"}${scriptSection}
 
-## 카드 구성 규칙
-1. card_no: 1 → role: "hook" — 강렬한 후킹 제목 (이모지 포함), 서브 카피
-2. card_no: 2 → role: "context" — 왜 중요한지 배경 설명
-3. card_no: 3 → role: "body" — 핵심 정보 1 (구체적 내용)
-4. card_no: 4 → role: "body" — 핵심 정보 2 (실행 방법)
-5. card_no: 5 → role: "body" — 핵심 정보 3 (주의사항 또는 팁)
-6. card_no: 6 → role: "cta" — 행동 촉구 (①②③ 형식의 3단계 행동)
+## 카드 구성 규칙 (B 스타일)
+1. card_no: 1 / role: "hook"
+   - title: 이모지 + 2줄 형태의 강렬한 후킹. 줄바꿈은 \\n 로 연결 (예: "🎓 공짜로 배우고\\n40만원 쿠폰까지")
+   - body: 대상 + 마감 같은 핵심 한 줄 (20자 이내)
+2. card_no: 2 / role: "context"
+   - title: 질문형 ("~가 뭔가요?" / "왜 중요한가요?")
+   - body: 3줄 이내로 배경 설명
+   - layout.pointText: 한 줄로 요약된 포인트 메시지 (필수)
+3. card_no: 3 / role: "body"
+   - title: 질문형 ("언제, 어떻게 진행되나요?" 같은 구체 질문)
+   - body: 날짜·일정·방식 등 실제 정보 4~5줄
+   - layout.pointText: 한 줄 핵심 (필수)
+4. card_no: 4 / role: "body"
+   - title: 질문형 ("무엇을 배우나요?" / "어떻게 신청하나요?")
+   - body: 단계·커리큘럼·방법 4~5줄. 숫자 매기기(1주차/2주차) 또는 · 구분자 사용
+   - layout.pointText: 한 줄 핵심 (필수)
+5. card_no: 5 / role: "body"
+   - title: 혜택·주의사항 요약 ("수료하면 받는 혜택" 등)
+   - body: 4~5줄. 혜택 금액·조건은 숫자 그대로
+   - layout.pointText: 한 줄 핵심 (필수)
+6. card_no: 6 / role: "cta" — ★ 반드시 나쿠 브랜드 고정 CTA ★
+   - title: "자세한 정보가 궁금하다면!"
+   - body: 아래 3줄 고정 (수정 금지)
+     naoo 인스타 팔로우\\n 댓글달기\\n DM창 확인하고 정보 확인하기
+   - hashtags: 5~7개, # 포함
 
 ## 작성 규칙
-- 독자: 네이버 스마트플레이스를 쓰는 자영업자
-- 어조: 친근하고 실용적, 과장 없이 사실 중심
-- 제목: 15자 이내, 핵심만
-- 본문(body): 4~6줄, 줄바꿈은 \\n 사용
-- hook의 body: 서브 카피 한 줄 (20자 이내)
-- cta의 body: "① 행동1\\n② 행동2\\n③ 행동3" 형식
-- body/context 카드 중 중요한 것에는 layout.pointText 추가 (한 줄 핵심 메시지)
-- hashtags: card_no 6(cta)에만 5~7개, # 포함
+- 제목 15자 이내(1번 hook 제외, hook은 2줄 구조)
+- 본문 각 줄 짧게, 줄바꿈은 \\n
+- 숫자·금액·기간은 공지에 명시된 그대로
+- hook 제외한 모든 body 카드는 layout.pointText 필수
 
 ## 응답 형식 (JSON만, 설명 없이)
 {
   "slides": [
-    {
-      "card_no": 1,
-      "role": "hook",
-      "title": "...",
-      "body": "...",
-      "hashtags": []
-    },
-    {
-      "card_no": 2,
-      "role": "context",
-      "title": "...",
-      "body": "...",
-      "layout": { "pointText": "..." }
-    },
-    ...
+    { "card_no": 1, "role": "hook", "title": "이모지 + 2줄", "body": "대상+마감" },
+    { "card_no": 2, "role": "context", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
+    { "card_no": 3, "role": "body", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
+    { "card_no": 4, "role": "body", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
+    { "card_no": 5, "role": "body", "title": "혜택/주의", "body": "...", "layout": { "pointText": "..." } },
+    { "card_no": 6, "role": "cta", "title": "자세한 정보가 궁금하다면!", "body": "naoo 인스타 팔로우\\n 댓글달기\\n DM창 확인하고 정보 확인하기", "hashtags": ["#...", "#..."] }
   ]
 }`;
 }

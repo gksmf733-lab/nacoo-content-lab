@@ -1,5 +1,6 @@
-import { sql } from "@/lib/db";
+import { sql, type PlatformId } from "@/lib/db";
 import { NoticesList, type NoticeListItem } from "./notices-list";
+import { CollectButton } from "./collect-button";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,8 @@ type NoticeRow = {
   effective_at: string | Date | null;
   deadline: string | Date | null;
   source: "auto" | "manual";
+  platform: PlatformId | null;
+  created_at: string | Date;
   has_script: boolean;
   has_card_news: boolean;
   card_qa_verdict: string | null;
@@ -33,7 +36,8 @@ function toDateStr(d: string | Date | null | undefined): string | null {
 export default async function HomePage() {
   const rowsRaw = await sql`
     SELECT n.id, n.title, n.category, n.importance, n.tags,
-           n.published_at, n.effective_at, n.deadline, n.source,
+           n.published_at, n.effective_at, n.deadline, n.source, n.platform,
+           n.created_at,
            (s.id IS NOT NULL) AS has_script,
            (c.id IS NOT NULL) AS has_card_news,
            c.qa_verdict AS card_qa_verdict
@@ -41,7 +45,7 @@ export default async function HomePage() {
     LEFT JOIN reels_scripts s ON s.notice_id = n.id
     LEFT JOIN card_news_sets c ON c.notice_id = n.id
     ORDER BY COALESCE(n.published_at, n.created_at::date) DESC
-    LIMIT 100
+    LIMIT 300
   `;
   const rows = rowsRaw as unknown as NoticeRow[];
 
@@ -56,6 +60,8 @@ export default async function HomePage() {
     effective_at: toDateStr(n.effective_at),
     deadline: toDateStr(n.deadline),
     source: n.source,
+    platform: (n.platform ?? "smartplace") as PlatformId,
+    collected_at: toDateStr(n.created_at),
     has_script: n.has_script,
     has_card_news: n.has_card_news,
     card_qa_verdict: n.card_qa_verdict,
@@ -68,10 +74,11 @@ export default async function HomePage() {
           <div>
             <h1 className="text-xl font-bold tracking-tight sm:text-2xl">나쿠 콘텐츠연구소</h1>
             <p className="mt-1 text-xs text-neutral-500 sm:text-sm">
-              네이버 스마트플레이스 공지 모니터링 · 릴스 대본 보관함
+              네이버 공식 공지 통합 모니터링 · 릴스 대본 보관함
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <CollectButton />
             <a
               href={NAVER_NOTICE_URL}
               target="_blank"

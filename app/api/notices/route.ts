@@ -13,7 +13,7 @@ export async function GET(req: NextRequest) {
 
   const rows = await sql`
     SELECT id, title, title_hash, category, importance, tags, published_at, effective_at,
-           deadline, summary, source, created_at
+           deadline, summary, source, platform, created_at
     FROM notices
     ORDER BY COALESCE(published_at, created_at::date) DESC
     LIMIT 200
@@ -40,6 +40,7 @@ export async function POST(req: NextRequest) {
     checklist,
     source_urls,
     source = "auto",
+    platform = "smartplace",
   } = body;
 
   // tags는 배열이어야 함. '중요'는 importance로 분리 저장하고 tags에는 제외.
@@ -59,12 +60,12 @@ export async function POST(req: NextRequest) {
     const rows = await sql`
       INSERT INTO notices (
         title, title_hash, category, importance, tags,
-        published_at, effective_at, deadline, summary, checklist, source_urls, source
+        published_at, effective_at, deadline, summary, checklist, source_urls, source, platform
       ) VALUES (
         ${title}, ${title_hash}, ${category ?? null}, ${finalImportance}, ${cleanTags},
         ${published_at ?? null}, ${effective_at ?? null}, ${deadline ?? null},
         ${summary ?? null}, ${checklist ?? null},
-        ${source_urls ?? null}, ${source}
+        ${source_urls ?? null}, ${source}, ${platform}
       )
       RETURNING id, title, title_hash
     `;

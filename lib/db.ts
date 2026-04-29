@@ -19,6 +19,16 @@ export const sql: NeonQueryFunction<false, false> = new Proxy(
   }
 );
 
+export type PlatformId =
+  | "smartplace"
+  | "smartstore"
+  | "booking"
+  | "talktalk"
+  | "searchad"
+  | "blog_smartplace"
+  | "blog_business"
+  | "blog_diary";
+
 export type Notice = {
   id: number;
   title: string;
@@ -31,6 +41,7 @@ export type Notice = {
   source_urls: string[] | null;
   title_hash: string;
   source: "auto" | "manual";
+  platform: PlatformId;
   deadline: string | null;
   created_at: string;
 };

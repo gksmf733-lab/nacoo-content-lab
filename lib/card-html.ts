@@ -1,8 +1,6 @@
 // 카드뉴스 HTML 생성기 — 단일 진실 소스 (SSOT)
 // PATCH API, 로컬 저장 CLI, 수동 생성 스크립트 모두 이 함수를 호출한다.
 
-import { CHARACTER_DATA_URI } from "./character-data-uri";
-
 export type CardRole = "hook" | "context" | "body" | "cta";
 
 export type CardLayout = {
@@ -42,9 +40,6 @@ const COLOR_ACCENT = "#E8572C";
 const COLOR_ACCENT_DARK = "#C4411A";
 const COLOR_ACCENT_LIGHT = "#FDF0EB";
 const BRAND = "나쿠 콘텐츠연구소";
-
-/** 캐릭터 이미지 — base64 data URI로 임베드 (미들웨어 경로 문제 없음) */
-const CHARACTER_IMG = CHARACTER_DATA_URI;
 
 const TITLE_SIZE_PX: Record<NonNullable<CardLayout["titleSize"]>, number> = {
   sm: 54,
@@ -103,15 +98,18 @@ function escMultiline(s: string): string {
   return esc(s).replace(/\n/g, "<br/>");
 }
 
-/** CTA 본문에서 ①②③ 또는 숫자+) 패턴으로 리스트 아이템 추출 */
+/** CTA 본문을 리스트 아이템 배열로 파싱
+ *  우선순위: ①②③ → 숫자+)/. → 줄바꿈 → · 구분자 */
 function parseCtaItems(body: string): string[] {
   const circled = /[①②③④⑤⑥⑦⑧⑨⑩]/;
   if (circled.test(body)) {
-    const parts = body.split(/[①②③④⑤⑥⑦⑧⑨⑩]/).map((p) => p.trim()).filter(Boolean);
-    return parts.slice(0, 5);
+    return body.split(/[①②③④⑤⑥⑦⑧⑨⑩]/).map((p) => p.trim()).filter(Boolean).slice(0, 5);
   }
   const numbered = body.split(/\s*(?:^|\s)\d+[).]\s*/).map((p) => p.trim()).filter(Boolean);
   if (numbered.length > 1) return numbered.slice(0, 5);
+  // 줄바꿈 (가장 흔한 패턴) — 앞쪽 " " 같은 공백 프리픽스도 제거
+  const lines = body.split(/\r?\n/).map((p) => p.trim()).filter(Boolean);
+  if (lines.length > 1) return lines.slice(0, 5);
   return body.split(/[·.,]/).map((p) => p.trim()).filter(Boolean).slice(0, 5);
 }
 
@@ -178,11 +176,7 @@ const BASE_STYLE = `
   .tag-chip-text{font-size:20px;font-weight:700;color:${COLOR_ACCENT};letter-spacing:0.08em;text-transform:uppercase}
 
   /* ── HOOK ── */
-  .hook-bg-split{
-    position:absolute;top:0;left:0;right:0;bottom:0;
-    background:linear-gradient(145deg, ${COLOR_ACCENT} 0%, ${COLOR_ACCENT} 48%, ${COLOR_BG} 48%);
-    z-index:0;
-  }
+  .hook-card{background:${COLOR_ACCENT}}
   .hook-bg-circle{
     position:absolute;top:-160px;right:-160px;
     width:600px;height:600px;border-radius:50%;
@@ -190,9 +184,9 @@ const BASE_STYLE = `
     z-index:1;
   }
   .hook-bg-circle2{
-    position:absolute;bottom:200px;left:-120px;
+    position:absolute;bottom:60px;left:-120px;
     width:380px;height:380px;border-radius:50%;
-    background:rgba(255,255,255,0.06);
+    background:rgba(0,0,0,0.05);
     z-index:1;
   }
   .hook-content{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center}
@@ -229,6 +223,11 @@ const BASE_STYLE = `
   }
   .hook-card .brand-bar .brand-name{color:#FFFFFF;opacity:0.75}
   .hook-card .brand-bar .brand-dot{background:#FFFFFF}
+  .hook-card .brand-footer{background:rgba(0,0,0,0.25)}
+  .hook-card .brand-footer-name{color:rgba(255,255,255,0.75)}
+  .hook-card .pagenum-badge .pagenum-current{background:#FFFFFF;color:${COLOR_ACCENT}}
+  .hook-card .pagenum-badge .pagenum-sep{color:rgba(255,255,255,0.4)}
+  .hook-card .pagenum-badge .pagenum-total{color:rgba(255,255,255,0.55)}
 
   /* ── CONTEXT ── */
   .context-border-line{
@@ -374,9 +373,6 @@ const BASE_STYLE = `
   .cta-card .pagenum-badge .pagenum-sep{color:rgba(255,255,255,0.4)}
   .cta-card .pagenum-badge .pagenum-total{color:rgba(255,255,255,0.55)}
 
-  /* 캐릭터 */
-  .character{position:absolute;right:48px;bottom:70px;width:200px;height:auto;opacity:0.90;pointer-events:none;z-index:3}
-  .cta-card .character{opacity:0.20}
 `;
 
 function brandFooter(cardNo: number, total: number): string {
@@ -410,7 +406,6 @@ export function renderCardHtml(input: CardInput): string {
   const titleSize = layout.titleSize ?? "md";
   const bodySize = layout.bodySize ?? "md";
   const bodyOffset = Number(layout.bodyOffset ?? 0);
-  const charSrc = CHARACTER_IMG;
 
   // ── HOOK ──────────────────────────────────────────────────────────────────
   if (input.role === "hook") {
@@ -421,8 +416,7 @@ export function renderCardHtml(input: CardInput): string {
     const titlePx = HOOK_TITLE_SIZE_PX[titleSize];
     const subPx = BODY_SIZE_PX[bodySize];
 
-    const inner = `<section class="card hook-card" style="background:${COLOR_BG}">
-  <div class="hook-bg-split"></div>
+    const inner = `<section class="card hook-card">
   <div class="hook-bg-circle"></div>
   <div class="hook-bg-circle2"></div>
 
@@ -438,7 +432,6 @@ export function renderCardHtml(input: CardInput): string {
     <p class="hook-sub" style="font-size:${subPx}px;text-align:left">${escMultiline(sub)}</p>` : ""}
   </div>
 
-  <img class="character" src="${charSrc}" alt="" />
   ${brandFooter(input.card_no, input.total)}
 </section>`;
     return wrapHtml(inner);
@@ -476,7 +469,6 @@ ${hashtags.map((t) => `      <span class="cta-hashtag">${esc(t)}</span>`).join("
     </div>` : ""}
   </div>
 
-  <img class="character" src="${charSrc}" alt="" />
   ${brandFooter(input.card_no, input.total)}
 </section>`;
     return wrapHtml(inner);
@@ -512,7 +504,6 @@ ${hashtags.map((t) => `      <span class="cta-hashtag">${esc(t)}</span>`).join("
     <span class="context-point-text">${esc(pointText)}</span>
   </div>` : ""}
 
-  <img class="character" src="${charSrc}" alt="" />
   ${brandFooter(input.card_no, input.total)}
 </section>`;
     return wrapHtml(inner);
@@ -548,7 +539,6 @@ ${lines.map((line) => `    <li class="body-list-item"><div class="body-list-bull
     <span class="body-point-text">${esc(pointText)}</span>
   </div>` : ""}
 
-  <img class="character" src="${charSrc}" alt="" />
   ${brandFooter(input.card_no, input.total)}
 </section>`;
   return wrapHtml(inner);

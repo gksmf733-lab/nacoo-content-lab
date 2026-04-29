@@ -22,11 +22,19 @@ const ROOT = path.resolve("카드뉴스");
 const VIEWPORT = { width: 1080, height: 1350, deviceScaleFactor: 2 };
 const JPEG_QUALITY = 92;
 
-/** 파일시스템에 안전한 이름 (Windows 금지 문자 교체) */
+/** 파일시스템에 안전한 이름
+ *  - Windows 금지 문자 치환 (\ / : * ? " < > |)
+ *  - 제어 문자 제거
+ *  - 끝·앞의 마침표·공백 제거 (Windows 는 trailing dot/space 를 자동 stripping 해서 경로 불일치 발생)
+ *  - 100자 제한 (MAX_PATH 예방)
+ */
 function safeFolder(name) {
-  return name
+  return String(name ?? "")
     .replace(/[\\/:*?"<>|]/g, "_")
+    .replace(/[\u0000-\u001F]/g, "")
     .replace(/\s+/g, " ")
+    .replace(/^[.\s]+|[.\s]+$/g, "")
+    .slice(0, 100)
     .trim();
 }
 

@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { CardNewsGenerateForm } from "./card-news-generate-form";
+import { SaveLocalButton } from "./save-local-button";
 
 export type CardLayout = {
   titleAlign?: "left" | "center";
@@ -47,19 +49,15 @@ export function CardNewsPanel({
   set,
   slides,
   noticeTitle,
+  noticeId,
 }: {
   set: SetRow | null;
   slides: SlideRow[];
   noticeTitle: string;
+  noticeId: number;
 }) {
   if (!set) {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-dashed border-neutral-300 bg-white px-4 py-10 text-center text-sm text-neutral-500">
-          아직 이 공지의 카드뉴스가 생성되지 않았습니다.
-        </div>
-      </div>
-    );
+    return <CardNewsGenerateForm noticeId={noticeId} hasExisting={false} />;
   }
 
   return (
@@ -71,19 +69,14 @@ export function CardNewsPanel({
         ))}
       </ol>
       {set.qa_issues && set.qa_issues.length > 0 && <QaPanel issues={set.qa_issues} />}
+      <CardNewsGenerateForm noticeId={noticeId} hasExisting />
       <DangerZone setId={set.id} />
     </div>
   );
 }
 
 function SetHeader({ set, noticeTitle }: { set: SetRow; noticeTitle: string }) {
-  const [saving, setSaving] = useState(false);
-  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
-  const [saveResult, setSaveResult] = useState<
-    | { ok: true; count: number; filename: string }
-    | { ok: false; error: string }
-    | null
-  >(null);
+  const [copied, setCopied] = useState(false);
   const verdictBadge =
     set.qa_verdict === "pass" ? (
       <span className="rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200">
@@ -99,124 +92,28 @@ function SetHeader({ set, noticeTitle }: { set: SetRow; noticeTitle: string }) {
       </span>
     );
 
-  /** 파일시스템 안전 문자만 남김 */
-  function safeName(s: string): string {
-    return s.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim();
+  /** Windows/유닉스 모두 안전한 폴더명 (save-cards.mjs 의 safeFolder 와 동일 규칙) */
+  function safeFolder(s: string): string {
+    return String(s ?? "")
+      .replace(/[\\/:*?"<>|]/g, "_")
+      .replace(/[\u0000-\u001F]/g, "")
+      .replace(/\s+/g, " ")
+      .replace(/^[.\s]+|[.\s]+$/g, "")
+      .slice(0, 100)
+      .trim();
   }
 
-  /** 카드뉴스 ZIP 다운로드 (클라이언트 사이드, Vercel/로컬 어디서든 동작) */
-  async function downloadZip() {
-    if (saving) return;
-    setSaving(true);
-    setSaveResult(null);
-    setProgress(null);
+  const cmd = `npm run save:cards -- ${set.id}`;
+  const outputPath = `카드뉴스/${safeFolder(noticeTitle)}/`;
 
+  async function copyCmd() {
     try {
-      // 1. 슬라이드 조회
-      const listRes = await fetch(`/api/card-news?notice_id=${set.notice_id}`);
-      if (!listRes.ok) throw new Error(`목록 조회 실패 (${listRes.status})`);
-      const listData = await listRes.json();
-      const slides: Array<{ card_no: number; html: string | null }> =
-        (listData.slides ?? []).filter((s: { html: string | null }) => s.html);
-      if (slides.length === 0) throw new Error("저장할 슬라이드가 없습니다.");
-
-      const safeTitle = safeName(noticeTitle);
-
-      // 2. lazy import (번들 크기 최소화)
-      const [{ default: JSZip }, { default: html2canvas }] = await Promise.all([
-        import("jszip"),
-        import("html2canvas"),
-      ]);
-
-      const zip = new JSZip();
-      setProgress({ current: 0, total: slides.length });
-
-      // 3. 각 슬라이드를 iframe에 렌더 → 캡처 → ZIP에 추가
-      for (let i = 0; i < slides.length; i++) {
-        const slide = slides[i];
-        const html = slide.html!;
-
-        const iframe = document.createElement("iframe");
-        iframe.style.cssText =
-          "position:fixed;top:0;left:-10000px;width:1080px;height:1350px;border:0;";
-        iframe.srcdoc = html;
-        document.body.appendChild(iframe);
-
-        try {
-          // iframe 로드 대기
-          await new Promise<void>((resolve, reject) => {
-            iframe.addEventListener("load", () => resolve(), { once: true });
-            iframe.addEventListener("error", () => reject(new Error("iframe load error")), {
-              once: true,
-            });
-          });
-
-          // iframe 내부 문서의 폰트 로드 대기
-          const ifDoc = iframe.contentDocument;
-          if (!ifDoc) throw new Error("iframe contentDocument 없음");
-          if (ifDoc.fonts?.ready) {
-            await ifDoc.fonts.ready;
-          }
-          // 그라디언트/이미지 렌더 안정화
-          await new Promise((r) => setTimeout(r, 400));
-
-          const target = ifDoc.body;
-          const canvas = await html2canvas(target, {
-            width: 1080,
-            height: 1350,
-            windowWidth: 1080,
-            windowHeight: 1350,
-            scale: 2,
-            useCORS: true,
-            backgroundColor: null,
-            logging: false,
-          });
-
-          const blob: Blob | null = await new Promise((r) =>
-            canvas.toBlob((b) => r(b), "image/jpeg", 0.92),
-          );
-          if (!blob) throw new Error(`card-${slide.card_no} blob 생성 실패`);
-          zip.file(`${safeTitle}-${slide.card_no}.jpg`, blob);
-          setProgress({ current: i + 1, total: slides.length });
-        } finally {
-          iframe.remove();
-        }
-      }
-
-      // 4. spec.json (파일 목록 + 메타)
-      zip.file(
-        "spec.json",
-        JSON.stringify(
-          {
-            set_id: set.id,
-            notice_id: set.notice_id,
-            title: noticeTitle,
-            saved_at: new Date().toISOString(),
-            cards: slides.map((s) => ({ n: s.card_no, file: `${safeTitle}-${s.card_no}.jpg` })),
-          },
-          null,
-          2,
-        ),
-      );
-
-      // 5. ZIP 생성 + 다운로드 트리거
-      const zipBlob = await zip.generateAsync({ type: "blob" });
-      const filename = `${safeTitle}.zip`;
-      const url = URL.createObjectURL(zipBlob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-
-      setSaveResult({ ok: true, count: slides.length, filename });
-    } catch (e: unknown) {
-      setSaveResult({ ok: false, error: e instanceof Error ? e.message : "알 수 없는 오류" });
-    } finally {
-      setSaving(false);
-      setProgress(null);
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      // clipboard API 실패 시 prompt 로 수동 복사 유도
+      window.prompt("명령어를 복사해서 터미널에 붙여넣으세요:", cmd);
     }
   }
 
@@ -233,32 +130,45 @@ function SetHeader({ set, noticeTitle }: { set: SetRow; noticeTitle: string }) {
         <span className="text-xs font-medium sm:text-sm">{set.card_count}장</span>
         <span className="ml-auto">{verdictBadge}</span>
       </div>
-      <div className="flex flex-row items-center justify-between gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
-        <div className="min-w-0 text-xs text-neutral-600">
-          📦 <span className="font-medium">카드뉴스 ZIP 다운로드</span> —{" "}
-          <span className="text-neutral-500">
-            {saveResult?.ok ? (
-              `✅ ${saveResult.count}장 · ${saveResult.filename}`
-            ) : saveResult && !saveResult.ok ? (
-              <span className="text-red-600">⚠ {saveResult.error}</span>
-            ) : progress ? (
-              `렌더링 중 ${progress.current}/${progress.total}...`
-            ) : (
-              "제목.zip 파일로 다운로드 (브라우저 기본 다운로드 폴더)"
-            )}
-          </span>
+
+      <div className="space-y-2 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 text-xs font-medium text-neutral-700">
+            💾 JPG 저장
+          </div>
+          <SaveLocalButton setId={set.id} cardCount={set.card_count} />
         </div>
-        <button
-          onClick={downloadZip}
-          disabled={saving}
-          className="shrink-0 rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:opacity-60"
-        >
-          {saving
-            ? progress
-              ? `${progress.current}/${progress.total}...`
-              : "준비 중..."
-            : "ZIP 다운로드"}
-        </button>
+        <p className="text-[10px] leading-relaxed text-neutral-500">
+          버튼 클릭 시 dev 서버가 <span className="font-mono">save-cards.mjs</span>{" "}
+          를 백그라운드 실행 → 로컬 Chromium 으로 {set.card_count}장 렌더 →{" "}
+          <span className="font-mono text-neutral-700">{outputPath}</span>{" "}
+          에 JPG 저장. 30초~1분.
+        </p>
+        <details className="text-[10px] text-neutral-500">
+          <summary className="cursor-pointer select-none hover:text-neutral-700">
+            수동 실행 명령어 보기
+          </summary>
+          <div className="mt-2 space-y-1.5">
+            <div
+              onClick={copyCmd}
+              className="cursor-pointer select-all overflow-x-auto rounded-md border border-neutral-300 bg-white px-3 py-2 font-mono text-[11px] text-neutral-800 hover:border-neutral-400"
+              title="클릭해서 복사"
+            >
+              {cmd}
+            </div>
+            <button
+              onClick={copyCmd}
+              className={
+                "rounded-md px-2 py-0.5 text-[10px] font-medium transition " +
+                (copied
+                  ? "bg-emerald-600 text-white"
+                  : "bg-white text-neutral-700 ring-1 ring-neutral-300 hover:bg-neutral-100")
+              }
+            >
+              {copied ? "✓ 복사됨" : "명령어 복사"}
+            </button>
+          </div>
+        </details>
       </div>
     </div>
   );

@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { TagBadges } from "@/lib/tag-badge";
+import { PLATFORMS, PLATFORM_ORDER, type PlatformMeta } from "@/lib/platforms";
+import type { PlatformId } from "@/lib/db";
 
 export type NoticeListItem = {
   id: number;
@@ -15,6 +17,8 @@ export type NoticeListItem = {
   effective_at: string | null;
   deadline: string | null;
   source: "auto" | "manual";
+  platform: PlatformId;
+  collected_at: string | null;
   has_script: boolean;
   has_card_news: boolean;
   card_qa_verdict: string | null;
@@ -55,16 +59,6 @@ export function NoticesList({ notices }: { notices: NoticeListItem[] }) {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [selectMode, setSelectMode] = useState(false);
   const [deleting, setDeleting] = useState(false);
-
-  const grouped = useMemo(() => {
-    const map = new Map<string, NoticeListItem[]>();
-    for (const n of notices) {
-      const key = monthKey(n.published_at);
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(n);
-    }
-    return [...map.entries()];
-  }, [notices]);
 
   function toggle(id: number) {
     setSelected((prev) => {
@@ -126,6 +120,17 @@ export function NoticesList({ notices }: { notices: NoticeListItem[] }) {
     );
   }
 
+  // 플랫폼별 그룹핑 — PLATFORM_ORDER 순서대로 전부 렌더 (0건도 표시).
+  const platformGroups = new Map<PlatformId, NoticeListItem[]>();
+  for (const n of notices) {
+    const pid = (n.platform ?? "smartplace") as PlatformId;
+    if (!platformGroups.has(pid)) platformGroups.set(pid, []);
+    platformGroups.get(pid)!.push(n);
+  }
+  const platforms: Array<{ meta: PlatformMeta; items: NoticeListItem[] }> = PLATFORM_ORDER.map(
+    (pid) => ({ meta: PLATFORMS[pid], items: platformGroups.get(pid) ?? [] })
+  );
+
   return (
     <>
       {/* 선택 모드 토글 */}
@@ -144,8 +149,127 @@ export function NoticesList({ notices }: { notices: NoticeListItem[] }) {
         </button>
       </div>
 
-      <div className="space-y-8 pb-24">
-        {grouped.map(([month, items]) => {
+      <div className="space-y-4 pb-24">
+        {platforms.map((p, i) => (
+          <PlatformAccordion
+            key={p.meta.id}
+            label={p.meta.shortLabel}
+            loginRequired={p.meta.loginRequired}
+            count={p.items.length}
+            defaultOpen={i === 0 && p.items.length > 0}
+          >
+            {p.items.length === 0 ? (
+              <div className="pt-4 text-center text-xs text-neutral-400">
+                아직 수집된 공지가 없습니다.
+                {p.meta.loginRequired && (
+                  <div className="mt-1 text-[11px] text-amber-600">
+                    · 네이버 계정 설정(.env.local)과 쿠키 발급이 필요합니다.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-8 pt-4">
+                {renderMonthGroups({
+                  notices: p.items,
+                  selectMode,
+                  selected,
+                  toggle,
+                  toggleGroup,
+                })}
+              </div>
+            )}
+          </PlatformAccordion>
+        ))}
+      </div>
+
+      {/* 플로팅 삭제 툴바 */}
+      {selectMode && (
+        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
+          <div className="flex items-center gap-3 rounded-full border border-neutral-200 bg-white px-4 py-2.5 shadow-lg">
+            <span className="text-xs font-medium text-neutral-700">
+              {selected.size === 0 ? "항목을 선택하세요" : `${selected.size}건 선택됨`}
+            </span>
+            <button
+              onClick={onDelete}
+              disabled={selected.size === 0 || deleting}
+              className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-40"
+            >
+              {deleting ? "삭제 중..." : "🗑️ 삭제"}
+            </button>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function PlatformAccordion({
+  label,
+  count,
+  loginRequired = false,
+  defaultOpen = false,
+  children,
+}: {
+  label: string;
+  count: number;
+  loginRequired?: boolean;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className="rounded-2xl border border-neutral-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-4 py-3 text-left transition hover:bg-neutral-50 sm:px-5 sm:py-4"
+        aria-expanded={open}
+      >
+        <span className={"transition-transform " + (open ? "rotate-90" : "rotate-0")}>
+          ▶
+        </span>
+        <h2 className="text-base font-bold text-neutral-900">{label}</h2>
+        {loginRequired && (
+          <span
+            className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-inset ring-amber-200"
+            title="네이버 로그인 필요"
+          >
+            🔒 로그인
+          </span>
+        )}
+        <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+          {count}건
+        </span>
+      </button>
+      {open && <div className="border-t border-neutral-100 px-4 pb-4 sm:px-5 sm:pb-5">{children}</div>}
+    </section>
+  );
+}
+
+function renderMonthGroups({
+  notices,
+  selectMode,
+  selected,
+  toggle,
+  toggleGroup,
+}: {
+  notices: NoticeListItem[];
+  selectMode: boolean;
+  selected: Set<number>;
+  toggle: (id: number) => void;
+  toggleGroup: (items: NoticeListItem[]) => void;
+}) {
+  const map = new Map<string, NoticeListItem[]>();
+  for (const n of notices) {
+    const key = monthKey(n.published_at);
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(n);
+  }
+  const grouped = [...map.entries()];
+
+  return (
+    <>
+      {grouped.map(([month, items]) => {
           const groupIds = items.map((i) => i.id);
           const allGroupSelected = selectMode && groupIds.every((id) => selected.has(id));
           return (
@@ -209,6 +333,14 @@ export function NoticesList({ notices }: { notices: NoticeListItem[] }) {
                           {dlStr && (
                             <span className="inline-flex items-center gap-0.5 rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-600">
                               <span className="text-red-400">마감</span> {shortDate(n.deadline)}
+                            </span>
+                          )}
+                          {n.collected_at && (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded bg-neutral-50 px-1.5 py-0.5 text-[10px] font-medium text-neutral-500 ring-1 ring-inset ring-neutral-200"
+                              title={`DB에 수집된 날짜 (${n.collected_at})`}
+                            >
+                              <span className="text-neutral-400">수집</span> {shortDate(n.collected_at)}
                             </span>
                           )}
                           <span className="text-xs text-neutral-300">·</span>
@@ -284,25 +416,6 @@ export function NoticesList({ notices }: { notices: NoticeListItem[] }) {
             </div>
           );
         })}
-      </div>
-
-      {/* 플로팅 삭제 툴바 */}
-      {selectMode && (
-        <div className="fixed inset-x-0 bottom-4 z-40 flex justify-center px-4">
-          <div className="flex items-center gap-3 rounded-full border border-neutral-200 bg-white px-4 py-2.5 shadow-lg">
-            <span className="text-xs font-medium text-neutral-700">
-              {selected.size === 0 ? "항목을 선택하세요" : `${selected.size}건 선택됨`}
-            </span>
-            <button
-              onClick={onDelete}
-              disabled={selected.size === 0 || deleting}
-              className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-40"
-            >
-              {deleting ? "삭제 중..." : "🗑️ 삭제"}
-            </button>
-          </div>
-        </div>
-      )}
     </>
   );
 }

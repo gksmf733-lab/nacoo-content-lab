@@ -24,3 +24,6 @@ canva-starter/
 
 # 인스타툰 원본/출력 이미지
 인스타툰 이미지/
+
+.vercel
+.env*.local

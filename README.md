@@ -124,3 +124,64 @@ NAKU_API_TOKEN=위에서 정한 API_TOKEN과 동일
 - ✅ 릴스 대본 조회 · **수정** · 삭제
 - ✅ Vercel Cron 자동 트리거
 - ❌ 수동 업로드 폼 (요청에 따라 제외, 자동화로만 등록)
+
+---
+
+## 멀티 플랫폼 공지 수집
+
+대시보드는 아래 8개 채널을 플랫폼별 아코디언으로 통합 표시합니다.
+
+| 플랫폼 | 로그인 | 수집 방식 |
+|---|---|---|
+| 네이버 스마트플레이스 | ❌ | puppeteer (`scripts/scrapers/smartplace.mjs`) |
+| 네이버 검색광고 | ❌ | puppeteer (`searchad.mjs`) |
+| 스마트플레이스 공식 블로그 | ❌ | RSS (`naver-blog.mjs`) |
+| 네이버 비즈니스 공식 블로그 | ❌ | RSS |
+| 네이버 다이어리 | ❌ | RSS |
+| 스마트스토어센터 | ✅ | puppeteer + 쿠키 세션 |
+| 네이버 예약 파트너센터 | ✅ | puppeteer + 쿠키 세션 |
+| 네이버 톡톡 파트너센터 | ✅ | puppeteer + 쿠키 세션 |
+
+### DB 마이그레이션 (기존 프로젝트)
+
+`notices` 테이블에 `platform` 컬럼이 없다면:
+
+```bash
+npm run migrate:platform
+```
+
+기존 행은 모두 `'smartplace'`로 백필됩니다.
+
+### 로그인 필요 채널 최초 셋업
+
+1. `.env.local`에 아이디/비번 추가:
+   ```env
+   NAVER_ID=your-naver-id
+   NAVER_PW=your-naver-password
+   ```
+2. **처음 한 번만** 브라우저 창을 띄워 수동 로그인 (2FA/기기등록 요구됨):
+   ```bash
+   NAVER_HEADLESS=0 npm run cron:collect
+   ```
+   - "새로운 기기입니다" 화면이 뜨면 이메일/SMS 인증을 완료
+   - 콘솔에 "완료 후 Enter ▶" 프롬프트가 뜨면 Enter
+3. 성공 시 `data/naver-session.json` 쿠키가 저장됨 → 이후엔 자동 재사용
+4. 쿠키 만료(보통 2주~1달) 시 같은 절차로 재발급
+
+### 수집 실행
+
+```bash
+# 전체 플랫폼 (쿠키 유효 시 무인 실행)
+npm run cron:collect
+
+# 로그인 필요 채널 스킵 (공개 채널만)
+node --env-file=.env.local scripts/cron-collect.mjs --skip-login
+
+# 특정 플랫폼만
+node --env-file=.env.local scripts/cron-collect.mjs --platforms smartplace,blog_smartplace
+```
+
+### 알려진 제약
+
+- 로그인 필요 3개 채널(`smartstore` / `booking` / `talktalk`)의 DOM 셀렉터는 **미확인 상태**로 커밋돼 있습니다. 첫 실행 시 0건이 나오면 `NAVER_HEADLESS=0`으로 실제 페이지를 열어 DOM을 확인하고 `scripts/scrapers/{smartstore,booking,talktalk}.mjs` 의 `page.evaluate` 블록 셀렉터를 조정하세요.
+- 네이버는 자동 로그인을 차단하는 추세라 `NAVER_ID`/`NAVER_PW`만으로는 자주 실패합니다. 쿠키 파일 재사용 전제로 설계됐습니다.

@@ -76,4 +76,10 @@ ALTER TABLE notices ADD COLUMN IF NOT EXISTS deadline DATE;
 -- 마이그레이션: 공지에 상세 요약(detail_summary) 컬럼 추가
 ALTER TABLE notices ADD COLUMN IF NOT EXISTS detail_summary TEXT;
 
+-- 마이그레이션: 공지 출처 플랫폼(platform) 컬럼 추가
+-- 값: smartplace | smartstore | booking | talktalk | searchad | blog_smartplace | blog_business | blog_diary
+ALTER TABLE notices ADD COLUMN IF NOT EXISTS platform TEXT NOT NULL DEFAULT 'smartplace';
+UPDATE notices SET platform = 'smartplace' WHERE platform IS NULL OR platform = '';
+CREATE INDEX IF NOT EXISTS idx_notices_platform ON notices (platform, published_at DESC);
+
 CREATE INDEX IF NOT EXISTS idx_card_news_slides_set_id ON card_news_slides (set_id);
