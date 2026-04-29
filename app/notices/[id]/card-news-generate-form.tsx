@@ -14,6 +14,9 @@ export function CardNewsGenerateForm({
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 프로덕션(Vercel)에선 Claude Code CLI 사용 불가 → 로컬 dev 에서만 노출.
+  if (process.env.NODE_ENV !== "development") return null;
+
   async function onGenerate() {
     if (generating) return;
     if (

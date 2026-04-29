@@ -18,6 +18,9 @@ export function SaveLocalButton({
   const [open, setOpen] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 프로덕션(Vercel)에선 spawn(node ...) 불가 → 로컬 dev 에서만 노출.
+  if (process.env.NODE_ENV !== "development") return null;
+
   async function start() {
     setPhase("starting");
     setLines([]);

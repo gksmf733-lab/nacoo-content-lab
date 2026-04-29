@@ -17,6 +17,9 @@ export function ScriptGenerateForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 프로덕션(Vercel)에선 Claude Code CLI 사용 불가 → 로컬 dev 에서만 노출.
+  if (process.env.NODE_ENV !== "development") return null;
+
   const selected = PERSONAS.find((p) => p.id === personaId) ?? PERSONAS[0];
 
   async function generate() {

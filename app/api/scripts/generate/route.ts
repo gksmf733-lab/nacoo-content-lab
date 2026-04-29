@@ -72,6 +72,13 @@ ${primaryContext}
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.NODE_ENV !== "development") {
+    return NextResponse.json(
+      { error: "대본 생성은 로컬 dev 환경 전용입니다 (Claude Code CLI 의존)." },
+      { status: 400 }
+    );
+  }
+
   const authed = (await isAuthed()) || checkApiToken(req.headers.get("authorization"));
   if (!authed) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });

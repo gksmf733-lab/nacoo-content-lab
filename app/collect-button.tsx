@@ -22,6 +22,10 @@ export function CollectButton() {
   const [open, setOpen] = useState(false); // 로그 패널 토글
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // 프로덕션(Vercel)에선 spawn(node ...) 불가 → 로컬 dev 에서만 노출.
+  // 프로덕션 자동 수집은 vercel.json 의 Vercel Cron (/api/cron/collect) 가 담당.
+  if (process.env.NODE_ENV !== "development") return null;
+
   async function start() {
     setPhase("starting");
     setLines([]);
