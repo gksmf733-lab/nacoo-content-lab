@@ -63,7 +63,7 @@ export default async function NoticeDetailPage({ params, searchParams }: Params 
   const [noticeRowsRaw, scriptRowsRaw, setRowsRaw] = await Promise.all([
     sql`SELECT * FROM notices WHERE id = ${noticeId} LIMIT 1`,
     sql`SELECT * FROM reels_scripts WHERE notice_id = ${noticeId} ORDER BY created_at DESC`,
-    sql`SELECT id, notice_id, audience, tone, card_count, status, qa_verdict, qa_issues
+    sql`SELECT id, notice_id, audience, tone, card_count, status, qa_verdict, qa_issues, style
         FROM card_news_sets WHERE notice_id = ${noticeId} LIMIT 1`,
   ]);
   const noticeRows = noticeRowsRaw as unknown as NoticeRow[];

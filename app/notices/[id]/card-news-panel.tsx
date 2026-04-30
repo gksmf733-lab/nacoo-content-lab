@@ -43,6 +43,7 @@ export type SetRow = {
     problem?: string;
     suggested_action?: string;
   }> | null;
+  style?: "legacy" | "nacoo";
 };
 
 export function CardNewsPanel({
@@ -60,6 +61,20 @@ export function CardNewsPanel({
     return <CardNewsGenerateForm noticeId={noticeId} hasExisting={false} />;
   }
 
+  // NACOO 스타일은 슬라이드 구조가 완전히 달라(s1 thumb / s2 quote / s3 compare ...)
+  // 기존 SlideCard 의 hook/context/body/cta 편집기로는 표현 불가 → 읽기 전용 iframe 미리보기.
+  // 편집은 추후 슬라이드 타입별 폼 추가 예정.
+  if (set.style === "nacoo") {
+    return (
+      <div className="space-y-4">
+        <SetHeader set={set} noticeTitle={noticeTitle} />
+        <NacooPreviewList slides={slides} />
+        <CardNewsGenerateForm noticeId={noticeId} hasExisting />
+        <DangerZone setId={set.id} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <SetHeader set={set} noticeTitle={noticeTitle} />
@@ -72,6 +87,54 @@ export function CardNewsPanel({
       <CardNewsGenerateForm noticeId={noticeId} hasExisting />
       <DangerZone setId={set.id} />
     </div>
+  );
+}
+
+const NACOO_ROLE_LABELS: Record<string, string> = {
+  thumb: "1. 썸네일",
+  quote: "2. 핵심 요약",
+  compare: "3. 안내 / 진단",
+  timeline: "4. 절차 / 방법",
+  checklist: "5. 체크리스트",
+  insight: "6. 인사이트 (KEY)",
+  cta: "7. CTA (고정)",
+};
+
+function NacooPreviewList({ slides }: { slides: SlideRow[] }) {
+  return (
+    <div className="space-y-6">
+      <div className="rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-900 ring-1 ring-amber-200">
+        <strong>NACOO 7장 카드뉴스</strong> · 다크+골든 / 단호·진단형 톤<br />
+        편집은 v2에서 슬라이드 타입별 폼으로 제공 예정. 지금은 미리보기·재생성·로컬 저장만 가능.
+      </div>
+      {slides.map((s) => (
+        <NacooSlidePreview key={s.id} slide={s} />
+      ))}
+    </div>
+  );
+}
+
+function NacooSlidePreview({ slide }: { slide: SlideRow }) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
+      <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
+        <span className="text-xs font-semibold text-neutral-700">
+          {NACOO_ROLE_LABELS[slide.role] ?? `${slide.card_no}. ${slide.role}`}
+        </span>
+        <span className="text-[10px] text-neutral-400">{slide.title}</span>
+      </div>
+      {slide.html ? (
+        <iframe
+          srcDoc={slide.html}
+          className="block w-full"
+          style={{ aspectRatio: "1080 / 1350", border: 0 }}
+          title={`Slide ${slide.card_no}`}
+          sandbox=""
+        />
+      ) : (
+        <div className="px-4 py-8 text-center text-xs text-neutral-400">HTML 비어 있음 (재생성 필요)</div>
+      )}
+    </section>
   );
 }
 

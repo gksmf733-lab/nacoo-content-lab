@@ -2,28 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { callClaude, parseJsonFromResponse } from "@/lib/claude-cli.mjs";
 import { sql } from "@/lib/db";
 import { isAuthed, checkApiToken } from "@/lib/auth";
-import { renderCardHtml, normalizeRole } from "@/lib/card-html";
+import { buildNacooSlideRows, type NacooBriefJson } from "@/lib/nacoo-card-html";
 
-// ── 타입 ──────────────────────────────────────────────
-type SlideInput = {
-  card_no: number;
-  role: "hook" | "context" | "body" | "cta";
-  title: string;
-  body: string;
-  hashtags?: string[];
-  layout?: Record<string, unknown>;
-};
-
-type ClaudeSlide = {
-  card_no: number;
-  role: string;
-  title: string;
-  body: string;
-  hashtags?: string[];
-  layout?: Record<string, unknown>;
-};
-
-// ── Claude 프롬프트 ───────────────────────────────────
+// ── Claude 프롬프트 (NACOO 7장 양식) ───────────────────
 function buildPrompt(notice: {
   title: string;
   summary: string | null;
@@ -32,16 +13,12 @@ function buildPrompt(notice: {
   category: string | null;
   importance: string | null;
   source_urls: string[] | null;
-}, script: { body_markdown: string | null } | null): string {
-  const scriptSection = script?.body_markdown
-    ? `\n\n## 릴스 대본 (참고용)\n${script.body_markdown}`
-    : "";
-
+}): string {
   const primaryContext = notice.detail_summary ?? notice.summary ?? "없음";
 
-  return `당신은 나쿠(naoo) 콘텐츠연구소의 카드뉴스 전문 카피라이터입니다.
-아래 공지 내용을 바탕으로 인스타그램 카드뉴스 6장을 JSON으로 생성하세요.
-톤은 친근하고 실용적, 과장 없이 사실 중심. 독자는 네이버 스마트플레이스를 쓰는 자영업자.
+  return `당신은 @nacoo_ceo (나쿠의 네이버 마케팅 연구소) 인스타그램 카드뉴스 카피라이터입니다.
+브랜드 톤은 **단호·진단형, 전문가 포지셔닝** — 친근·공감 톤이 아닙니다.
+독자는 자영업자 / 플레이스 마케터 / 네이버 마케팅 입문자.
 
 ## 공지 정보
 - 제목: ${notice.title}
@@ -51,50 +28,68 @@ function buildPrompt(notice: {
 ${primaryContext}
 - 핵심 체크리스트: ${notice.summary ?? "없음"}
 - 운영자 체크리스트: ${notice.checklist ?? "없음"}
-- 참고 링크: ${(notice.source_urls ?? []).join(", ") || "없음"}${scriptSection}
+- 참고 링크: ${(notice.source_urls ?? []).join(", ") || "없음"}
 
-## 카드 구성 규칙 (B 스타일)
-1. card_no: 1 / role: "hook"
-   - title: 이모지 + 2줄 형태의 강렬한 후킹. 줄바꿈은 \\n 로 연결 (예: "🎓 공짜로 배우고\\n40만원 쿠폰까지")
-   - body: 대상 + 마감 같은 핵심 한 줄 (20자 이내)
-2. card_no: 2 / role: "context"
-   - title: 질문형 ("~가 뭔가요?" / "왜 중요한가요?")
-   - body: 3줄 이내로 배경 설명
-   - layout.pointText: 한 줄로 요약된 포인트 메시지 (필수)
-3. card_no: 3 / role: "body"
-   - title: 질문형 ("언제, 어떻게 진행되나요?" 같은 구체 질문)
-   - body: 날짜·일정·방식 등 실제 정보 4~5줄
-   - layout.pointText: 한 줄 핵심 (필수)
-4. card_no: 4 / role: "body"
-   - title: 질문형 ("무엇을 배우나요?" / "어떻게 신청하나요?")
-   - body: 단계·커리큘럼·방법 4~5줄. 숫자 매기기(1주차/2주차) 또는 · 구분자 사용
-   - layout.pointText: 한 줄 핵심 (필수)
-5. card_no: 5 / role: "body"
-   - title: 혜택·주의사항 요약 ("수료하면 받는 혜택" 등)
-   - body: 4~5줄. 혜택 금액·조건은 숫자 그대로
-   - layout.pointText: 한 줄 핵심 (필수)
-6. card_no: 6 / role: "cta" — ★ 반드시 나쿠 브랜드 고정 CTA ★
-   - title: "자세한 정보가 궁금하다면!"
-   - body: 아래 3줄 고정 (수정 금지)
-     naoo 인스타 팔로우\\n 댓글달기\\n DM창 확인하고 정보 확인하기
-   - hashtags: 5~7개, # 포함
+## 7장 카드 구성 (고정 순서)
 
-## 작성 규칙
-- 제목 15자 이내(1번 hook 제외, hook은 2줄 구조)
-- 본문 각 줄 짧게, 줄바꿈은 \\n
-- 숫자·금액·기간은 공지에 명시된 그대로
-- hook 제외한 모든 body 카드는 layout.pointText 필수
+### 1. thumb (썸네일)
+- titleLines: 정확히 4줄 배열. 각 줄 한국어 ≤13자. 임팩트 있는 단언/요약.
+- emphasisIndex: 골든 강조 들어갈 줄 번호 (0~3, 보통 2 — 핵심 키워드)
+- lightIndex: 연회색 처리할 줄 번호 (0~3, 보통 1 — 분위기 라벨)
+- titleSize: 4줄이 짧으면 120, 길면 104, 더 길면 92
+- subLine1, subLine2Prefix, subHighlight, subSuffix: 서브 한 문장을 4조각으로 나눠서. 강조 키워드 1곳만 subHighlight 로 분리.
 
-## 응답 형식 (JSON만, 설명 없이)
+### 2. quote (핵심 요약)
+- label: "핵심 요약" (또는 "이슈" / "문제" 중 적절한 것)
+- quoteLine1, quoteHighlight: 큰 인용문을 두 조각으로. 후자가 골든 강조.
+- items: 정확히 3개. {title: 핵심 단어 ≤8자, desc: 한 줄 설명 ≤30자}
+- conclusion: 결론 한 줄 (선택)
+
+### 3. compare (안내 / 진단)
+- label: "안내" (정보 전달형) 또는 "진단" (잘못된 방식 vs 올바른 방식)
+- headLine1, headHighlight, headSuffix: 헤드라인 분할. headHighlight 는 underline-gold.
+- rows: 정확히 4개. 각 {tag: 짧은 태그(2~4자), text: 본문(≤25자), type: "right" or "wrong"}
+  - 안내형: 모두 type="right"
+  - 진단형: 잘못 2개("wrong") + 올바름 2개("right")
+- verdictLine1, verdictBold, verdictSuffix: 결론 박스 — verdictBold 는 골든 강조.
+
+### 4. timeline (방법 / 절차)
+- label: "절차" / "방법" / "대상" 중 택1
+- headLine1, headHighlight: 헤드라인 분할. headHighlight 가 골든.
+- steps: 4~5개. 각 {time: STEP/CONDITION/시점 라벨(예 "STEP 01 · 사전 확인"), title: ≤18자, desc: ≤40자}
+
+### 5. checklist (체크리스트 / FAQ)
+- label: "체크리스트" 또는 "자주 묻는 질문"
+- captureTag: "캡처해서 매장에 적용" 또는 "캡처해서 보관하세요"
+- head: 헤드라인 (≤25자)
+- headSub: 부제 (선택)
+- checks: 5개 (최대 7개). 각 {title: 핵심(≤25자), dim: 부가설명(≤40자, 선택)}
+
+### 6. insight (인사이트 — 골든 배경 KEY)
+- label: "인사이트" (고정 권장)
+- keyStamp: "본질" / "정리" / "핵심" 중 택1
+- headPrefix, headHighlight, headSuffix: 본질 헤드라인 분할. headHighlight 는 cream(흰크림) 강조.
+- headLine2: 두 번째 줄 (선택)
+- points: 정확히 4개. 각 {title: ≤14자, desc: ≤40자}
+
+### 7. cta — 자동 생성 (출력에서 제외!) — 시스템이 고정 텍스트 사용
+
+## 절대 규칙
+- 컬러 이모지(📌💡🔥 등) 절대 금지
+- 모든 텍스트는 공지에 명시된 사실만 사용. 없는 정보 창작 금지.
+- 숫자·금액·기간·메뉴 경로는 공지에 적힌 그대로
+- 톤: "리뷰 100개 있어도 안 뜹니다" / "대부분 모르는 진짜 이유" 같이 단언·진단형
+- 피할 단어: "대박", "꿀팁", "혜자", "완전", "5분 만에", "초간단"
+- 헤드라인 한 줄 ≤13자, 항목 제목 ≤18자, 본문 ≤35자
+
+## 응답 형식 — JSON 만, 코드블록·설명 없이
 {
-  "slides": [
-    { "card_no": 1, "role": "hook", "title": "이모지 + 2줄", "body": "대상+마감" },
-    { "card_no": 2, "role": "context", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
-    { "card_no": 3, "role": "body", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
-    { "card_no": 4, "role": "body", "title": "질문?", "body": "...", "layout": { "pointText": "..." } },
-    { "card_no": 5, "role": "body", "title": "혜택/주의", "body": "...", "layout": { "pointText": "..." } },
-    { "card_no": 6, "role": "cta", "title": "자세한 정보가 궁금하다면!", "body": "naoo 인스타 팔로우\\n 댓글달기\\n DM창 확인하고 정보 확인하기", "hashtags": ["#...", "#..."] }
-  ]
+  "thumb": { "titleLines": ["","","",""], "emphasisIndex": 2, "lightIndex": 1, "titleSize": 104, "subLine1": "", "subLine2Prefix": "", "subHighlight": "", "subSuffix": "" },
+  "quote": { "label": "핵심 요약", "quoteLine1": "", "quoteHighlight": "", "items": [{"title":"","desc":""},{"title":"","desc":""},{"title":"","desc":""}], "conclusion": "" },
+  "compare": { "label": "안내", "headLine1": "", "headHighlight": "", "headSuffix": "", "rows": [{"tag":"","text":"","type":"right"}], "verdictLine1": "", "verdictBold": "", "verdictSuffix": "" },
+  "timeline": { "label": "절차", "headLine1": "", "headHighlight": "", "steps": [{"time":"","title":"","desc":""}] },
+  "checklist": { "label": "체크리스트", "captureTag": "", "head": "", "headSub": "", "checks": [{"title":"","dim":""}] },
+  "insight": { "label": "인사이트", "keyStamp": "본질", "headPrefix": "", "headHighlight": "", "headSuffix": "", "headLine2": "", "points": [{"title":"","desc":""}] }
 }`;
 }
 
@@ -138,46 +133,18 @@ export async function POST(req: NextRequest) {
   }
   const notice = noticeRows[0];
 
-  // 2. 릴스 대본 조회 (있으면 참고용으로 사용)
-  const scriptRows = (await sql`
-    SELECT body_markdown FROM reels_scripts WHERE notice_id = ${noticeId} LIMIT 1
-  `) as unknown as Array<{ body_markdown: string }>;
-  const script = scriptRows[0] ?? null;
-
-  // 3. Claude 호출
-  let slides: SlideInput[];
+  // 2. Claude 호출 → NACOO 7장 brief JSON
+  let slides: ReturnType<typeof buildNacooSlideRows>;
   try {
-    const prompt = buildPrompt(notice, script);
+    const prompt = buildPrompt(notice);
     const text = await callClaude(prompt);
-    const parsed = parseJsonFromResponse(text) as { slides: ClaudeSlide[] };
+    const brief = parseJsonFromResponse(text) as NacooBriefJson;
 
-    if (!Array.isArray(parsed.slides) || parsed.slides.length === 0) {
-      throw new Error("슬라이드 배열이 비어 있습니다.");
+    // 최소 검증 — 필수 키 존재
+    for (const key of ["thumb", "quote", "compare", "timeline", "checklist", "insight"] as const) {
+      if (!brief[key]) throw new Error(`brief.${key} 누락`);
     }
-
-    // 슬라이드 정규화 + HTML 생성
-    const total = parsed.slides.length;
-    slides = parsed.slides.map((s: ClaudeSlide, idx: number) => {
-      const role = normalizeRole(s.role ?? "body");
-      const layout = s.layout ?? {};
-      const html = renderCardHtml({
-        card_no: s.card_no ?? idx + 1,
-        total,
-        role,
-        title: s.title ?? "",
-        body: s.body ?? "",
-        layout,
-      });
-      return {
-        card_no: s.card_no ?? idx + 1,
-        role,
-        title: s.title ?? "",
-        body: s.body ?? "",
-        hashtags: s.hashtags ?? [],
-        layout,
-        html,
-      } as SlideInput & { html: string; layout: Record<string, unknown> };
-    });
+    slides = buildNacooSlideRows(brief);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     return NextResponse.json(
@@ -186,32 +153,30 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // 4. DB 저장 (기존 세트 삭제 후 재생성)
+  // 3. DB 저장 (기존 세트 삭제 후 재생성)
   try {
     await sql`DELETE FROM card_news_sets WHERE notice_id = ${noticeId}`;
 
     const setRows = (await sql`
-      INSERT INTO card_news_sets (notice_id, audience, tone, card_count, status)
-      VALUES (${noticeId}, '전체', 'AI생성(Gemini)', ${slides.length}, 'draft')
+      INSERT INTO card_news_sets (notice_id, audience, tone, card_count, status, style)
+      VALUES (${noticeId}, '@nacoo_ceo', 'NACOO 7장', ${slides.length}, 'draft', 'nacoo')
       RETURNING id
     `) as unknown as Array<{ id: number }>;
     const setId = setRows[0].id;
 
     for (const s of slides) {
-      const sl = s as SlideInput & { html?: string; layout?: Record<string, unknown> };
       await sql`
-        INSERT INTO card_news_slides (set_id, card_no, role, title, body, hashtags, html, layout)
+        INSERT INTO card_news_slides (set_id, card_no, role, title, body, html, layout)
         VALUES (
-          ${setId}, ${sl.card_no}, ${sl.role}, ${sl.title}, ${sl.body},
-          ${sl.hashtags ?? null},
-          ${sl.html ?? null},
-          ${sl.layout ? JSON.stringify(sl.layout) : null}::jsonb
+          ${setId}, ${s.card_no}, ${s.role}, ${s.title}, ${s.body},
+          ${s.html},
+          ${JSON.stringify(s.layout)}::jsonb
         )
       `;
     }
 
     return NextResponse.json(
-      { ok: true, set_id: setId, card_count: slides.length },
+      { ok: true, set_id: setId, card_count: slides.length, style: "nacoo" },
       { status: 201 }
     );
   } catch (err: unknown) {

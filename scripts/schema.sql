@@ -83,3 +83,10 @@ UPDATE notices SET platform = 'smartplace' WHERE platform IS NULL OR platform = 
 CREATE INDEX IF NOT EXISTS idx_notices_platform ON notices (platform, published_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_card_news_slides_set_id ON card_news_slides (set_id);
+
+-- 마이그레이션: card_news_sets.style — 'legacy'(기존 6장 hook/context/body/cta) vs 'nacoo'(7장 NACOO 스타일)
+-- 새 row 는 nacoo 가 기본. 기존 6장 데이터는 legacy 로 백필.
+ALTER TABLE card_news_sets ADD COLUMN IF NOT EXISTS style TEXT NOT NULL DEFAULT 'nacoo';
+UPDATE card_news_sets s SET style = 'legacy'
+  WHERE style = 'nacoo'
+    AND EXISTS (SELECT 1 FROM card_news_slides sl WHERE sl.set_id = s.id AND sl.role IN ('hook','context','body'));
