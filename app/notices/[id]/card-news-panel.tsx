@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { CardNewsGenerateForm } from "./card-news-generate-form";
 import { SaveLocalButton } from "./save-local-button";
+import { NacooSlideEditor } from "./nacoo-slide-editor";
 
 export type CardLayout = {
   titleAlign?: "left" | "center";
@@ -61,9 +62,7 @@ export function CardNewsPanel({
     return <CardNewsGenerateForm noticeId={noticeId} hasExisting={false} />;
   }
 
-  // NACOO 스타일은 슬라이드 구조가 완전히 달라(s1 thumb / s2 quote / s3 compare ...)
-  // 기존 SlideCard 의 hook/context/body/cta 편집기로는 표현 불가 → 읽기 전용 iframe 미리보기.
-  // 편집은 추후 슬라이드 타입별 폼 추가 예정.
+  // NACOO 스타일: 슬라이드 타입별 편집 폼 + iframe 미리보기
   if (set.style === "nacoo") {
     return (
       <div className="space-y-4">
@@ -75,8 +74,10 @@ export function CardNewsPanel({
     );
   }
 
+  // legacy(6장 hook/context/body/cta) — 기존 편집기 유지 + 마이그레이션 안내
   return (
     <div className="space-y-4">
+      <LegacyMigrationBanner />
       <SetHeader set={set} noticeTitle={noticeTitle} />
       <ol className="space-y-4">
         {slides.map((s) => (
@@ -86,6 +87,15 @@ export function CardNewsPanel({
       {set.qa_issues && set.qa_issues.length > 0 && <QaPanel issues={set.qa_issues} />}
       <CardNewsGenerateForm noticeId={noticeId} hasExisting />
       <DangerZone setId={set.id} />
+    </div>
+  );
+}
+
+function LegacyMigrationBanner() {
+  return (
+    <div className="rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-xs text-blue-900">
+      <strong>레거시 6장 카드뉴스</strong> · 옛 디자인(라이트 톤 + 캐릭터)으로 생성된 세트입니다.<br />
+      아래 "🖼️ 카드뉴스 재생성" 버튼을 누르면 새 NACOO 7장 스타일(다크+골든)로 자동 변환됩니다.
     </div>
   );
 }
@@ -105,7 +115,7 @@ function NacooPreviewList({ slides }: { slides: SlideRow[] }) {
     <div className="space-y-6">
       <div className="rounded-lg bg-amber-50 px-4 py-3 text-xs text-amber-900 ring-1 ring-amber-200">
         <strong>NACOO 7장 카드뉴스</strong> · 다크+골든 / 단호·진단형 톤<br />
-        편집은 v2에서 슬라이드 타입별 폼으로 제공 예정. 지금은 미리보기·재생성·로컬 저장만 가능.
+        각 슬라이드 우측 상단 "편집" 버튼으로 수정. CTA(7번)는 변경 금지.
       </div>
       {slides.map((s) => (
         <NacooSlidePreview key={s.id} slide={s} />
@@ -115,14 +125,44 @@ function NacooPreviewList({ slides }: { slides: SlideRow[] }) {
 }
 
 function NacooSlidePreview({ slide }: { slide: SlideRow }) {
+  const [editing, setEditing] = useState(false);
+  const isCta = slide.role === "cta";
+
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
       <div className="flex items-center justify-between border-b border-neutral-100 bg-neutral-50 px-4 py-2.5">
         <span className="text-xs font-semibold text-neutral-700">
           {NACOO_ROLE_LABELS[slide.role] ?? `${slide.card_no}. ${slide.role}`}
         </span>
-        <span className="text-[10px] text-neutral-400">{slide.title}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] text-neutral-400">{slide.title}</span>
+          {!isCta && (
+            <button
+              onClick={() => setEditing((v) => !v)}
+              className={
+                "rounded-md px-2.5 py-1 text-[11px] font-medium transition " +
+                (editing
+                  ? "bg-neutral-900 text-white hover:bg-neutral-700"
+                  : "border border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400")
+              }
+            >
+              {editing ? "닫기" : "편집"}
+            </button>
+          )}
+        </div>
       </div>
+
+      {editing && (
+        <div className="border-b border-neutral-100 bg-white p-4">
+          <NacooSlideEditor
+            slideId={slide.id}
+            role={slide.role}
+            initialLayout={slide.layout as Record<string, unknown> | null}
+            onClose={() => setEditing(false)}
+          />
+        </div>
+      )}
+
       {slide.html ? (
         <iframe
           srcDoc={slide.html}
